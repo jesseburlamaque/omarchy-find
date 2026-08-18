@@ -7,7 +7,6 @@ A Spotlight-style file search for the Omarchy shell. Summon the overlay, type to
 - **Fuzzy search** powered by `fd`, with fzf-style multi-term ranking
 - **Type filters:** All, Folders, Documents, Images, Videos, Audio, Code and Recent — cycle with Tab or click the chips
 - **Recent suggestions:** open with no query to see files changed in the last 30 days, most recent first
-- **Friendly dates** like `Today 14:32` and `Yesterday 09:05`, following the system locale (pt/en)
 - **Enter or click to open** the selected file or folder with the default app (`xdg-open`)
 - **Bar widget:** magnifier icon that toggles the search overlay
 - **CLI + launcher app:** `omarchy-find` command and a **Find** app in the launcher
