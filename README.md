@@ -17,7 +17,6 @@ A Spotlight-style file search for the Omarchy shell. Summon the overlay, type to
 This project is a work in progress — I'd be happy to receive suggestions for improvements.
 
 ## Install
-
 ```sh
 omarchy plugin add https://github.com/jesseburlamaque/omarchy-find.git --enable
 ```
@@ -27,26 +26,6 @@ Then restart the shell:
 ```sh
 omarchy restart shell
 ```
-
-By default the magnifier icon is placed in the **right** section of the bar. If it does not land where you want, drag it there with the bar's built-in gesture, or run:
-
-```sh
-omarchy bar move jesseburlamaque.omarchy-find --section right --index 0
-```
-
-(Adjust the section/index as needed depending on your other widgets.)
-
-### CLI and launcher app
-
-The `omarchy-find` command and the **Find** launcher app come with the bundled install script:
-
-```sh
-git clone https://github.com/jesseburlamaque/omarchy-find.git
-cd omarchy-find
-./install.sh
-```
-
-The script copies the plugin to `~/.config/omarchy/plugins/`, installs the CLI into `~/.local/bin`, registers the desktop entry, and enables the plugin.
 
 ## Enable / Disable
 
@@ -70,7 +49,13 @@ After enabling or disabling, restart the shell:
 omarchy restart shell
 ```
 
-## Remove
+## For Update
+
+```sh
+omarchy plugin update jesseburlamaque.omarchy-find --yes
+```
+
+## For Remove
 
 ```sh
 omarchy plugin remove jesseburlamaque.omarchy-find
@@ -93,14 +78,6 @@ Open with `omarchy-find`, the launcher app **Find**, or the magnifier icon on th
 - **Tab / Shift+Tab** cycle the type filters
 - **Enter** or click opens the selected file or folder
 - **Esc** clears the query, or closes the overlay if the query is empty
-
-### CLI
-
-```sh
-omarchy-find                           # toggle (default)
-omarchy-find open '{"query":"notas"}'  # open with a pre-filled query
-omarchy-find close                     # close the overlay
-```
 
 ## License
 
