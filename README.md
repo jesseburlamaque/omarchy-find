@@ -26,6 +26,19 @@ Then restart the shell:
 omarchy restart shell
 ```
 
+## Usage
+
+Open with `omarchy-find`, the launcher app **Find**, or the magnifier icon on the bar.
+
+| Action | What it does |
+| ------ | ------------ |
+| Type | Search — results update as you type |
+| ↑ / ↓ | Navigate the results |
+| PageUp / PageDown, Home / End | Navigate faster through the results |
+| Tab / Shift+Tab | Cycle the type filters |
+| Enter or click | Open the selected file or folder |
+| Esc | Clear the query, or close the overlay if the query is empty |
+
 ## Enable / Disable
 
 You can manage the plugin through the Omarchy menu:
@@ -67,16 +80,6 @@ Then restart the shell:
 ```sh
 omarchy restart shell
 ```
-
-## Usage
-
-Open with `omarchy-find`, the launcher app **Find**, or the magnifier icon on the bar.
-
-- **Type** to search — results update as you type
-- **↑ / ↓** navigate the results (PageUp/PageDown, Home/End also work)
-- **Tab / Shift+Tab** cycle the type filters
-- **Enter** or click opens the selected file or folder
-- **Esc** clears the query, or closes the overlay if the query is empty
 
 ## License
 
