@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "jesseburlamaque.omarchy-find",
+  "name": "Omarchy Find",
+  "version": "1.0.0",
+  "author": "Jesse Burlamaque",
+  "description": "Busca de arquivos estilo Spotlight com filtros por tipo (fd + xdg-open)",
+  "kinds": [
+    "overlay",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Find.qml",
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy Find",
+    "description": "Lupa na barra que abre a busca de arquivos",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

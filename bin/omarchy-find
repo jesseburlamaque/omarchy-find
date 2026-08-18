@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# omarchy-find — abre/fecha o overlay de busca de arquivos
+# (plugin de shell jesseburlamaque.omarchy-find).
+#
+# Wrapper fino sobre a IPC padrão do omarchy-shell, no mesmo estilo do
+# omarchy-menu: o overlay vive dentro do processo do shell, este comando
+# apenas o invoca.
+
+set -euo pipefail
+
+PLUGIN_ID="jesseburlamaque.omarchy-find"
+verb="${1:-toggle}"
+payload="${2:-}"
+[ -z "$payload" ] && payload='{}'
+
+case "$verb" in
+  toggle)
+    exec omarchy-shell shell toggle "$PLUGIN_ID" "$payload"
+    ;;
+  open | summon)
+    exec omarchy-shell shell summon "$PLUGIN_ID" "$payload"
+    ;;
+  close | hide)
+    exec omarchy-shell shell hide "$PLUGIN_ID"
+    ;;
+  -h | --help | help)
+    cat <<USAGE
+Uso: omarchy-find [verbo] [payloadJson]
+
+Verbos:
+  toggle [payload]   Abre o find, ou fecha se já estiver aberto (padrão).
+  open|summon        Sempre abre. Payload opcional: '{"query":"termo"}'
+  close|hide         Fecha o overlay.
+
+Exemplos:
+  omarchy-find
+  omarchy-find open '{"query":"notas"}'
+USAGE
+    ;;
+  *)
+    echo "omarchy-find: verbo desconhecido '$verb'. Tente 'omarchy-find --help'." >&2
+    exit 2
+    ;;
+esac
