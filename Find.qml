@@ -14,6 +14,10 @@ Item {
   property var manifest: null
 
   property bool opened: false
+  // Começa como faixa estreita; expande ao digitar ou no botão Expandir.
+  property bool expanded: false
+  // Expansão manual (botão/Tab): limpar o texto não encolhe de volta.
+  property bool manualExpand: false
   property string filterText: ""
   property int selectedIndex: 0
   property int activeFilter: 0
@@ -65,7 +69,9 @@ Item {
     root.filterText = query
     root.selectedIndex = 0
     root.activeFilter = 0
-    root.runSearch()
+    root.manualExpand = false
+    root.expanded = query.trim() !== ""
+    if (root.expanded) root.runSearch()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -87,6 +93,7 @@ Item {
   function debugState() {
     return JSON.stringify({
       opened: root.opened,
+      expanded: root.expanded,
       activeFilter: root.activeFilter,
       filterText: root.filterText,
       count: displayModel.count,
@@ -97,7 +104,22 @@ Item {
   function setFilter(nextFilter) {
     root.filterText = nextFilter
     root.selectedIndex = 0
+    if (nextFilter.trim() !== "") root.expanded = true
+    else if (!root.manualExpand) root.expanded = false
     debounce.restart()
+  }
+
+  // Botão Expandir / Tab no estado colapsado: abre o card completo
+  // (com query vazia isso lista os recentes).
+  function expandForBrowse() {
+    root.manualExpand = true
+    root.expanded = true
+    root.runSearch()
+  }
+
+  function collapseView() {
+    root.manualExpand = false
+    root.expanded = false
   }
 
   function setActiveFilter(index) {
@@ -115,6 +137,8 @@ Item {
   // ------------------------------------------------------------ busca (fd)
 
   function runSearch() {
+    // Colapsado não há lista visível; a busca dispara só ao expandir.
+    if (!root.expanded) return
     root.searchGen++
     if (procDirs.running || procFiles.running) {
       root.rerunPending = true
@@ -326,9 +350,16 @@ Item {
     BorderSurface {
       id: card
       width: root.cardWidth
-      height: root.cardHeight
+      height: root.expanded
+        ? root.cardHeight
+        : root.headerHeight + card.contentTopInset + card.contentBottomInset
       radius: root.cornerRadius
       anchors.centerIn: parent
+
+      Behavior on height {
+        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+      }
+
       color: root.background
       borderSpec: root.borderSpec
       padding: root.contentMargin
@@ -347,10 +378,12 @@ Item {
             else root.dismiss()
             event.accepted = true
           } else if (event.key === Qt.Key_Tab) {
-            root.cycleFilter(1)
+            if (root.expanded) root.cycleFilter(1)
+            else root.expandForBrowse()
             event.accepted = true
           } else if (event.key === Qt.Key_Backtab) {
-            root.cycleFilter(-1)
+            if (root.expanded) root.cycleFilter(-1)
+            else root.expandForBrowse()
             event.accepted = true
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
@@ -418,7 +451,7 @@ Item {
           Text {
             anchors.left: searchIcon.right
             anchors.leftMargin: Style.spacing.sm
-            anchors.right: countLabel.left
+            anchors.right: expandButton.left
             anchors.rightMargin: Style.spacing.sm
             anchors.verticalCenter: parent.verticalCenter
             text: root.filterText || Backend.t("searchPlaceholder", root.locale)
@@ -429,25 +462,40 @@ Item {
             elide: Text.ElideRight
           }
 
-          Text {
-            id: countLabel
+          // Botão Expandir/Recolher na extremidade do campo de busca.
+          Rectangle {
+            id: expandButton
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            text: root.searching
-              ? Backend.t("searching", root.locale)
-              : (displayModel.count > 0
-                 ? displayModel.count + Backend.t(displayModel.count === 1 ? "result" : "results", root.locale)
-                 : "")
-            color: root.accent
-            opacity: 0.8
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
+            width: expandLabel.implicitWidth + Style.space(18)
+            height: Math.max(Style.space(26), Style.font.body + Style.space(10))
+            radius: root.cornerRadius
+            color: expandMouse.containsMouse ? root.chipHover : root.chipIdle
+
+            Text {
+              id: expandLabel
+              anchors.centerIn: parent
+              text: Backend.t(root.expanded ? "collapse" : "expand", root.locale)
+              color: root.expanded ? root.foreground : root.accent
+              opacity: root.expanded ? 0.8 : 1
+              font.family: root.fontFamily
+              font.pixelSize: Math.max(10, Style.font.body - 1)
+            }
+
+            MouseArea {
+              id: expandMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.expanded ? root.collapseView() : root.expandForBrowse()
+            }
           }
         }
 
         // Chips de filtro por tipo
         Flickable {
           id: chips
+          visible: root.expanded
           width: parent.width
           height: chipRow.height
           contentWidth: chipRow.width
@@ -499,15 +547,22 @@ Item {
 
         // Lista de resultados
         Item {
+          visible: root.expanded
           width: parent.width
-          height: parent.height - searchField.height - chips.height - footer.implicitHeight - root.contentSpacing * 3
+          height: Math.max(0, parent.height - searchField.height - chips.height - footer.implicitHeight - root.contentSpacing * 3)
 
           ListView {
             id: resultList
-            anchors.fill: parent
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: countLabel.visible ? countLabel.height + Style.space(4) : 0
             model: displayModel
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+
+
 
             delegate: Rectangle {
               id: rowRoot
@@ -629,11 +684,29 @@ Item {
               width: parent.width
             }
           }
+
+          // Contagem no final da lista; só existe no estado expandido.
+          Text {
+            id: countLabel
+            visible: text !== ""
+            anchors.bottom: parent.bottom
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: root.searching
+              ? Backend.t("searching", root.locale)
+              : (displayModel.count > 0
+                 ? displayModel.count + Backend.t(displayModel.count === 1 ? "result" : "results", root.locale)
+                 : "")
+            color: root.accent
+            opacity: 0.8
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
         }
 
         // Dicas de teclado
         Text {
           id: footer
+          visible: root.expanded
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
           text: Backend.t("footer", root.locale)

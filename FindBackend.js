@@ -51,6 +51,7 @@ var LOCALES = {
     result: " resultado", results: " resultados",
     noResults: "Sem resultados para \"",
     noRecent: "Nada recente por aqui",
+    expand: "Expandir", collapse: "Recolher",
     footer: "↑↓ navegar · Tab trocar filtro · Enter abrir · Esc fechar"
   },
   en: {
@@ -62,6 +63,7 @@ var LOCALES = {
     result: " result", results: " results",
     noResults: "No results for \"",
     noRecent: "Nothing recent here",
+    expand: "Expand", collapse: "Collapse",
     footer: "↑↓ navigate · Tab switch filter · Enter open · Esc close"
   }
 }
