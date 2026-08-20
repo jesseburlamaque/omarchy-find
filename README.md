@@ -21,9 +21,9 @@ Beyond simple file launching, it acts as a central productivity hub:
 
 ## Features
 
-- **⚡ Blazing Fast Search:** Powered by `fd` with smart multi-term matching and relevance ranking (exact and prefix matches prioritized over fuzzy subsequences).
-- **📂 Full-Path Awareness:** Matches both filenames and parent folder structures (e.g. typing `config` or `hypr` accurately locates `~/.config/hypr`).
-- **🏷️ Type Filters:**
+- **Blazing Fast Search:** Powered by `fd` with smart multi-term matching and relevance ranking (exact and prefix matches prioritized over fuzzy subsequences).
+- **Full-Path Awareness:** Matches both filenames and parent folder structures (e.g. typing `config` or `hypr` accurately locates `~/.config/hypr`).
+- **Type Filters:**
   - **All:** Search everything across your home directory with user files prioritized.
   - **Folders:** Non-hidden user directories in `$HOME`.
   - **System Folders:** Essential editable configuration and dotfile directories (`~/.config`, `hypr`, `omarchy`, `nvim`, `kitty`, etc.) with noise and caches excluded.
@@ -31,12 +31,12 @@ Beyond simple file launching, it acts as a central productivity hub:
   - **Images, Videos & Audio:** Quick discovery for multimedia assets.
   - **Code:** Source files and scripts across all major programming languages.
   - **Recent:** Recently modified files and folders (last 30 days) shown most-recent first.
-- **🔄 Instant Sorting Modes:** Switch on the fly between **Relevance**, **Most Recent**, **Oldest**, **Name (A → Z)**, and **Name (Z → A)** via single click or `Ctrl+S`.
-- **🌐 Quick Web Search:** Type `go <query>` to hide local file lists and open Google search directly in your browser.
-- **⌨️ Ergonomic Keyboard Navigation:** Full support for arrow keys, readline navigation (`Ctrl+N`/`Ctrl+P`), vim-style shortcuts (`Ctrl+J`/`Ctrl+K`), `Home`/`End`, and `PageUp`/`PageDown`.
-- **🔍 Status Bar Widget & CLI:** Includes a bar magnifier icon widget, a launcher desktop entry, and the `omarchy-find` CLI command.
-- **🎨 Native Shell Aesthetics:** Automatically follows active Omarchy themes, colors, and typography.
-- **🧹 Noise Filtering:** Automatically ignores noisy build directories (`.git`, `node_modules`, `.cache`, `.venv`, electron storages, trash, etc.).
+- **Instant Sorting Modes:** Switch on the fly between **Relevance**, **Most Recent**, **Oldest**, **Name (A → Z)**, and **Name (Z → A)** via single click or `Ctrl+S`.
+- **Quick Web Search:** Type `go <query>` to hide local file lists and open Google search directly in your browser.
+- **Ergonomic Keyboard Navigation:** Full support for arrow keys, readline navigation (`Ctrl+N`/`Ctrl+P`), vim-style shortcuts (`Ctrl+J`/`Ctrl+K`), `Home`/`End`, and `PageUp`/`PageDown`.
+- **Status Bar Widget & CLI:** Includes a bar magnifier icon widget, a launcher desktop entry, and the `omarchy-find` CLI command.
+- **Native Shell Aesthetics:** Automatically follows active Omarchy themes, colors, and typography.
+- **Noise Filtering:** Automatically ignores noisy build directories (`.git`, `node_modules`, `.cache`, `.venv`, electron storages, trash, etc.).
 
 ---
 
