@@ -18,8 +18,38 @@ var EXCLUDES = [
   ".rustup",
   ".gradle",
   ".local/share/Trash",
+  ".local/share/flatpak",
   ".venv",
   "venv"
+]
+
+var SYSTEM_EXCLUDES = [
+  "*Cache*",
+  "Local Storage",
+  "Session Storage",
+  "Service Worker",
+  "blob_storage",
+  "Dawn*",
+  "logs",
+  "*Storage*",
+  "History",
+  "data",
+  "Crashpad",
+  "Dictionaries",
+  "Partitions",
+  "Shared Dictionary",
+  "Backups",
+  "google-chrome*",
+  "microsoft-edge*",
+  "chromium",
+  "BraveSoftware",
+  "mozilla",
+  "dconf",
+  "ibus",
+  "fcitx",
+  "pulse",
+  "procps",
+  ".*.bak.*"
 ]
 
 var DOCS_EXTS = ["pdf", "doc", "docx", "odt", "ott", "rtf", "txt", "md", "markdown",
@@ -40,7 +70,7 @@ var CODE_EXTS = ["c", "h", "cpp", "cxx", "cc", "hpp", "hh", "rs", "go", "py", "p
 // Locale translations with English fallback.
 var LOCALES = {
   pt: {
-    all: "Tudo", folders: "Pastas", docs: "Documentos", images: "Imagens",
+    all: "Tudo", folders: "Pastas", systemFolders: "Pastas do Sistema", docs: "Documentos", images: "Imagens",
     videos: "Vídeos", audio: "Áudio", code: "Código", recent: "Recentes",
     today: "Hoje", yesterday: "Ontem",
     searchPlaceholder: "Buscar arquivos, pastas e mais…",
@@ -55,7 +85,7 @@ var LOCALES = {
     googleFooter: "Enter abrir no navegador · Esc fechar"
   },
   en: {
-    all: "All", folders: "Folders", docs: "Documents", images: "Images",
+    all: "All", folders: "Folders", systemFolders: "System Folders", docs: "Documents", images: "Images",
     videos: "Videos", audio: "Audio", code: "Code", recent: "Recent",
     today: "Today", yesterday: "Yesterday",
     searchPlaceholder: "Search files, folders and more…",
@@ -88,14 +118,15 @@ function t(key, locale) {
 }
 
 var FILTERS = [
-  { id: "all",     label: "All",        dirs: true,  files: true,  exts: [],          recentDays: 0 },
-  { id: "folders", label: "Folders",    dirs: true,  files: false, exts: [],          recentDays: 0 },
-  { id: "docs",    label: "Documents",  dirs: false, files: true,  exts: DOCS_EXTS,   recentDays: 0 },
-  { id: "images",  label: "Images",     dirs: false, files: true,  exts: IMAGES_EXTS, recentDays: 0 },
-  { id: "videos",  label: "Videos",     dirs: false, files: true,  exts: VIDEOS_EXTS, recentDays: 0 },
-  { id: "audio",   label: "Audio",      dirs: false, files: true,  exts: AUDIO_EXTS,  recentDays: 0 },
-  { id: "code",    label: "Code",       dirs: false, files: true,  exts: CODE_EXTS,   recentDays: 0 },
-  { id: "recent",  label: "Recent",     dirs: true,  files: true,  exts: [],          recentDays: 14 }
+  { id: "all",           label: "All",            dirs: true,  files: true,  exts: [],          recentDays: 0, hidden: true },
+  { id: "folders",       label: "Folders",        dirs: true,  files: false, exts: [],          recentDays: 0, hidden: false },
+  { id: "systemFolders", label: "System Folders", dirs: true,  files: false, exts: [],          recentDays: 0, systemFolders: true },
+  { id: "docs",          label: "Documents",      dirs: false, files: true,  exts: DOCS_EXTS,   recentDays: 0, hidden: false },
+  { id: "images",        label: "Images",         dirs: false, files: true,  exts: IMAGES_EXTS, recentDays: 0, hidden: false },
+  { id: "videos",        label: "Videos",         dirs: false, files: true,  exts: VIDEOS_EXTS, recentDays: 0, hidden: false },
+  { id: "audio",         label: "Audio",          dirs: false, files: true,  exts: AUDIO_EXTS,  recentDays: 0, hidden: false },
+  { id: "code",          label: "Code",           dirs: false, files: true,  exts: CODE_EXTS,   recentDays: 0, hidden: false },
+  { id: "recent",        label: "Recent",         dirs: true,  files: true,  exts: [],          recentDays: 14, hidden: true }
 ]
 
 function isSubsequence(needle, haystack) {
@@ -131,19 +162,44 @@ function buildArgv(query, filterIndex, forDirs, home) {
   var filter = FILTERS[filterIndex] || FILTERS[0]
   var argv = ["fd", "--color=never", "--max-results", String(MAX_RESULTS)]
   argv.push("--type", forDirs ? "d" : "f")
-  argv.push("--hidden")
+
+  if (filter.hidden !== false) {
+    argv.push("--hidden")
+  }
+
   for (var i = 0; i < EXCLUDES.length; i++) argv.push("-E", EXCLUDES[i])
+
+  if (filter.systemFolders) {
+    argv.push("--max-depth", "3")
+    for (var s = 0; s < SYSTEM_EXCLUDES.length; s++) argv.push("-E", SYSTEM_EXCLUDES[s])
+  }
+
   if (!forDirs) {
     for (var e = 0; e < filter.exts.length; e++) argv.push("-e", filter.exts[e])
   }
   var days = filter.recentDays || 0
   if (query.trim().length === 0 && days === 0) days = EMPTY_QUERY_DAYS
   if (days > 0) argv.push("--changed-within", days + "d")
+
+  argv.push("--full-path")
   argv.push("--")
+
   var q = query.trim()
-  if (q.length === 0) argv.push(".")
-  else if (q.length <= 2) argv.push("--fixed-strings", q)
-  else argv.push(fuzzyPattern(q))
+  if (q.length === 0) {
+    if (filter.systemFolders) {
+      argv.push("/\\.config(/|$)")
+    } else {
+      argv.push(".")
+    }
+  } else {
+    var escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    if (filter.systemFolders) {
+      argv.push("/\\.config.*" + escaped)
+    } else {
+      argv.push(escaped)
+    }
+  }
+
   argv.push(home)
   return argv
 }
@@ -257,10 +313,9 @@ function scoreTerm(name, term) {
   var idx = name.indexOf(term)
   if (idx > 0) {
     var prev = name.charAt(idx - 1)
-    if (prev === " " || prev === "-" || prev === "_" || prev === ".") return 2
+    if (prev === " " || prev === "-" || prev === "_" || prev === "." || prev === "/") return 2
     return 3
   }
-  if (isSubsequence(term, name)) return 4
   return -1
 }
 
@@ -268,13 +323,14 @@ function scoreTerm(name, term) {
 function scoreItem(item, query) {
   var name = item.name.toLowerCase()
   var path = item.path.toLowerCase()
-  var terms = query.split(/\s+/)
+  var terms = query.trim().toLowerCase().split(/\s+/)
   var total = 0
   for (var i = 0; i < terms.length; i++) {
-    var s = scoreTerm(name, terms[i])
+    var term = terms[i]
+    var s = scoreTerm(name, term)
     if (s < 0) {
-      if (path.indexOf(terms[i]) !== -1) s = 5
-      else if (isSubsequence(terms[i], path)) s = 6
+      if (path.indexOf("/" + term) !== -1 || path.indexOf("/." + term) !== -1) s = 4
+      else if (path.indexOf(term) !== -1) s = 5
       else return -1
     }
     total += s
@@ -291,7 +347,7 @@ function rankResults(items, query, limit, home) {
       var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
       if (aSys !== bSys) return aSys ? 1 : -1
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-      return 0
+      return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0)
     })
     return copy.slice(0, limit)
   }
@@ -304,11 +360,15 @@ function rankResults(items, query, limit, home) {
     }
   }
   scored.sort(function(a, b) {
-    // User files/folders first, system/hidden files last
-    if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+    // 1. Better query relevance score comes first! (Exact match beats fuzzy)
     if (a.score !== b.score) return a.score - b.score
+    // 2. For items with equal score, prefer user files/folders over system/hidden files
+    if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+    // 3. Directories before files
     if (a.item.isDir !== b.item.isDir) return a.item.isDir ? -1 : 1
+    // 4. Shorter name length
     if (a.item.name.length !== b.item.name.length) return a.item.name.length - b.item.name.length
+    // 5. Alphabetical path
     return a.item.path < b.item.path ? -1 : (a.item.path > b.item.path ? 1 : 0)
   })
   var out = []
