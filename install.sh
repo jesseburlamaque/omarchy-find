@@ -62,6 +62,9 @@ fi
 echo "==> Habilitando (adiciona a lupa na seção direita da barra)"
 omarchy plugin enable "$PLUGIN_ID"
 
+echo "==> Reiniciando o shell para aplicar alterações"
+command -v omarchy-restart-shell >/dev/null 2>&1 && omarchy-restart-shell || true
+
 echo
 echo "Pronto! Abra com:"
 echo "  omarchy-find            # closes if already open"

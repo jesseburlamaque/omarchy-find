@@ -49,7 +49,10 @@ var LOCALES = {
     noResults: "Sem resultados para \"",
     noRecent: "Nada recente por aqui",
     expand: "Expandir", collapse: "Recolher",
-    footer: "↑↓ navegar · Tab trocar filtro · Enter abrir · Esc fechar"
+    footer: "↑↓ navegar · Tab trocar filtro · Enter abrir · Esc fechar",
+    googleSearch: "Busca no Google",
+    searchGoogleFor: "Buscar no Google por \"",
+    googleFooter: "Enter abrir no navegador · Esc fechar"
   },
   en: {
     all: "All", folders: "Folders", docs: "Documents", images: "Images",
@@ -61,7 +64,10 @@ var LOCALES = {
     noResults: "No results for \"",
     noRecent: "Nothing recent here",
     expand: "Expand", collapse: "Collapse",
-    footer: "↑↓ navigate · Tab switch filter · Enter open · Esc close"
+    footer: "↑↓ navigate · Tab switch filter · Enter open · Esc close",
+    googleSearch: "Google Search",
+    searchGoogleFor: "Search Google for \"",
+    googleFooter: "Enter open in browser · Esc close"
   }
 }
 

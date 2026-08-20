@@ -24,6 +24,9 @@ Item {
   property bool searching: false
   property string home: Quickshell.env("HOME")
 
+  readonly property bool isGoogleSearch: /^\s*go\s+/i.test(root.filterText)
+  readonly property string googleSearchTerms: isGoogleSearch ? root.filterText.replace(/^\s*go\s+/i, "").trim() : ""
+
   // Protects against out-of-order search results.
   property int searchGen: 0
   property bool rerunPending: false
@@ -103,24 +106,31 @@ Item {
     if (nextFilter.trim() !== "") root.expanded = true
     else if (!root.manualExpand) root.expanded = false
 
-    var query = nextFilter.trim()
-    if (/^go\s+/i.test(query)) {
-      var searchTerms = query.slice(3).trim()
-      if (searchTerms.length > 0) {
-        displayModel.clear()
+    if (root.isGoogleSearch) {
+      debounce.stop()
+      if (procDirs.running) procDirs.running = false
+      if (procFiles.running) procFiles.running = false
+      if (procStat.running) procStat.running = false
+      root.searching = false
+      root.pendingProcs = 0
+      root.rerunPending = false
+      displayModel.clear()
+      var terms = root.googleSearchTerms
+      if (terms.length > 0) {
         displayModel.append({
-          path: "https://www.google.com/search?q=" + encodeURIComponent(searchTerms),
-          name: "Search Google for \"" + searchTerms + "\"",
-          dir: "Google Search",
+          path: "https://www.google.com/search?q=" + encodeURIComponent(terms),
+          name: Backend.t("searchGoogleFor", root.locale) + terms + "\"",
+          dir: Backend.t("googleSearch", root.locale),
           icon: "󰍉",
           isDir: false,
           mtime: ""
         })
       }
-    } else {
-      if (displayModel.count > 0 && displayModel.get(0).dir === "Google Search") {
-        displayModel.remove(0)
-      }
+      return
+    }
+
+    if (displayModel.count > 0 && displayModel.get(0).dir === Backend.t("googleSearch", root.locale)) {
+      displayModel.clear()
     }
 
     debounce.restart()
@@ -153,8 +163,8 @@ Item {
   // Search
 
   function runSearch() {
-    // Search only when expanded.
-    if (!root.expanded) return
+    // Search only when expanded and not in Google search mode.
+    if (!root.expanded || root.isGoogleSearch) return
     root.searchGen++
     if (procDirs.running || procFiles.running) {
       root.rerunPending = true
@@ -190,6 +200,7 @@ Item {
   }
 
   function procFinished(proc, text) {
+    if (root.isGoogleSearch) return
     if (proc.gen === root.searchGen) {
       root.pendingItems = root.pendingItems.concat(
         Backend.parseLines(text, proc.kind === "d", root.home))
@@ -205,23 +216,9 @@ Item {
   }
 
   function presentResults(items) {
+    if (root.isGoogleSearch) return
     var ranked = Backend.rankResults(items, root.filterText, Backend.DISPLAY_LIMIT)
     displayModel.clear()
-
-    var query = root.filterText.trim()
-    if (/^go\s+/i.test(query)) {
-      var searchTerms = query.slice(3).trim()
-      if (searchTerms.length > 0) {
-        displayModel.append({
-          path: "https://www.google.com/search?q=" + encodeURIComponent(searchTerms),
-          name: "Search Google for \"" + searchTerms + "\"",
-          dir: "Google Search",
-          icon: "󰍉",
-          isDir: false,
-          mtime: ""
-        })
-      }
-    }
 
     for (var i = 0; i < ranked.length; i++) {
       displayModel.append({
@@ -392,7 +389,11 @@ Item {
       id: card
       width: root.cardWidth
       height: root.expanded
-        ? root.cardHeight
+        ? (root.isGoogleSearch
+            ? (root.googleSearchTerms !== ""
+                ? (root.headerHeight + root.rowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset)
+                : (root.headerHeight + card.contentTopInset + card.contentBottomInset))
+            : root.cardHeight)
         : root.headerHeight + card.contentTopInset + card.contentBottomInset
       radius: root.cornerRadius
       anchors.centerIn: parent
@@ -419,13 +420,25 @@ Item {
             else root.dismiss()
             event.accepted = true
           } else if (event.key === Qt.Key_Tab) {
-            if (root.expanded) root.cycleFilter(1)
-            else root.expandForBrowse()
-            event.accepted = true
+            if (root.isGoogleSearch) {
+              event.accepted = true
+            } else if (root.expanded) {
+              root.cycleFilter(1)
+              event.accepted = true
+            } else {
+              root.expandForBrowse()
+              event.accepted = true
+            }
           } else if (event.key === Qt.Key_Backtab) {
-            if (root.expanded) root.cycleFilter(-1)
-            else root.expandForBrowse()
-            event.accepted = true
+            if (root.isGoogleSearch) {
+              event.accepted = true
+            } else if (root.expanded) {
+              root.cycleFilter(-1)
+              event.accepted = true
+            } else {
+              root.expandForBrowse()
+              event.accepted = true
+            }
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
             event.accepted = true
@@ -504,6 +517,7 @@ Item {
 
           Rectangle {
             id: expandButton
+            visible: !root.isGoogleSearch
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             width: expandLabel.implicitWidth + Style.space(18)
@@ -533,7 +547,7 @@ Item {
 
         Flickable {
           id: chips
-          visible: root.expanded
+          visible: root.expanded && !root.isGoogleSearch
           width: parent.width
           height: chipRow.height
           contentWidth: chipRow.width
@@ -584,9 +598,11 @@ Item {
         }
 
         Item {
-          visible: root.expanded
+          visible: root.expanded && (!root.isGoogleSearch || root.googleSearchTerms !== "")
           width: parent.width
-          height: Math.max(0, parent.height - searchField.height - chips.height - footer.implicitHeight - root.contentSpacing * 3)
+          height: root.isGoogleSearch
+            ? root.rowHeight
+            : Math.max(0, parent.height - searchField.height - (chips.visible ? chips.height : 0) - footer.implicitHeight - root.contentSpacing * 3)
 
           ListView {
             id: resultList
@@ -695,7 +711,7 @@ Item {
           Column {
             anchors.centerIn: parent
             spacing: Style.space(8)
-            visible: displayModel.count === 0
+            visible: !root.isGoogleSearch && displayModel.count === 0
 
             Text {
               text: "󰈉"
@@ -724,7 +740,7 @@ Item {
 
           Text {
             id: countLabel
-            visible: text !== ""
+            visible: !root.isGoogleSearch && (text !== "")
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.searching
@@ -741,10 +757,12 @@ Item {
 
         Text {
           id: footer
-          visible: root.expanded
+          visible: root.expanded && (!root.isGoogleSearch || root.googleSearchTerms !== "")
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
-          text: Backend.t("footer", root.locale)
+          text: root.isGoogleSearch
+            ? Backend.t("googleFooter", root.locale)
+            : Backend.t("footer", root.locale)
           color: root.foreground
           opacity: 0.45
           font.family: root.fontFamily
