@@ -1,24 +1,47 @@
 # Omarchy Find
 
-A Spotlight-style file search for the Omarchy shell. Summon the overlay, type to search files and folders across your home, filter by type, and open results with the default app.
+A fast, elegant, keyboard-driven universal file search and quick launcher for the [Omarchy](https://github.com/omarchy/omarchy) shell on Linux.
+
+---
+
+## About
+
+**Omarchy Find** brings a modern, Spotlight/Raycast-inspired search overlay experience natively integrated into the Omarchy shell. Designed for speed, ergonomics, and seamless workflow, it enables you to summon a search overlay at any moment to find and access anything across your system with zero friction.
+
+Whether you are looking for deeply nested project files, academic papers and PDFs, media collections, or config directories (such as `~/.config/hypr`, `~/.config/omarchy`, `nvim`, etc.), Omarchy Find indexes and filters your filesystem in real time using `fd`.
+
+Beyond simple file launching, it acts as a central productivity hub:
+- **Instant Access:** Open any file or folder directly with its default application (`xdg-open`).
+- **File Manager Integration:** Reveal and jump directly into the enclosing directory (`Alt+Enter`).
+- **Terminal Integration:** Spawn your preferred terminal directly inside the target directory (`Ctrl+T`).
+- **Clipboard Utility:** Instantly copy clean absolute paths to the clipboard (`Ctrl+C`).
+- **Web Search:** Type `go <terms>` to seamlessly perform an instant Google search in your default browser.
+
+---
 
 ## Features
 
-- **Fuzzy and full-path search** powered by `fd`, with relevance scoring and smart ranking
-- **Type filters:** All, Folders (User home), System Folders (`.config`, `omarchy`, `hypr`, etc.), Documents, Images, Videos, Audio, Code and Recent — cycle with Tab or click the chips
-- **Sort options:** Relevance, Most Recent, Oldest, Name (A → Z) and Name (Z → A) — switch with 1 click or `Ctrl+S`
-- **Direct Google Search:** type `go <query>` to search on Google directly in your default browser
-- **Rich keyboard navigation:** navigate with arrow keys or readline (`Ctrl+N`/`P`) / vim (`Ctrl+J`/`K`)
-- **Quick actions:** open file/folder, reveal parent directory in file manager (`Alt+Enter`), copy path (`Ctrl+C`), open terminal (`Ctrl+T`)
-- **Recent suggestions:** open with no query to see files changed in the last 30 days, most recent first
-- **Bar widget:** magnifier icon that toggles the search overlay
-- **CLI + launcher app:** `omarchy-find` command and a **Find** app in the launcher
-- Noisy directories excluded from search (`.git`, `node_modules`, caches, trash, internal browser storages…)
-- Follows the active Omarchy theme colors
+- **⚡ Blazing Fast Search:** Powered by `fd` with smart multi-term matching and relevance ranking (exact and prefix matches prioritized over fuzzy subsequences).
+- **📂 Full-Path Awareness:** Matches both filenames and parent folder structures (e.g. typing `config` or `hypr` accurately locates `~/.config/hypr`).
+- **🏷️ Type Filters:**
+  - **All:** Search everything across your home directory with user files prioritized.
+  - **Folders:** Non-hidden user directories in `$HOME`.
+  - **System Folders:** Essential editable configuration and dotfile directories (`~/.config`, `hypr`, `omarchy`, `nvim`, `kitty`, etc.) with noise and caches excluded.
+  - **Documents:** PDFs, Markdown, Word, eBooks, spreadsheets, and text files.
+  - **Images, Videos & Audio:** Quick discovery for multimedia assets.
+  - **Code:** Source files and scripts across all major programming languages.
+  - **Recent:** Recently modified files and folders (last 30 days) shown most-recent first.
+- **🔄 Instant Sorting Modes:** Switch on the fly between **Relevance**, **Most Recent**, **Oldest**, **Name (A → Z)**, and **Name (Z → A)** via single click or `Ctrl+S`.
+- **🌐 Quick Web Search:** Type `go <query>` to hide local file lists and open Google search directly in your browser.
+- **⌨️ Ergonomic Keyboard Navigation:** Full support for arrow keys, readline navigation (`Ctrl+N`/`Ctrl+P`), vim-style shortcuts (`Ctrl+J`/`Ctrl+K`), `Home`/`End`, and `PageUp`/`PageDown`.
+- **🔍 Status Bar Widget & CLI:** Includes a bar magnifier icon widget, a launcher desktop entry, and the `omarchy-find` CLI command.
+- **🎨 Native Shell Aesthetics:** Automatically follows active Omarchy themes, colors, and typography.
+- **🧹 Noise Filtering:** Automatically ignores noisy build directories (`.git`, `node_modules`, `.cache`, `.venv`, electron storages, trash, etc.).
 
-This project is a work in progress — I'd be happy to receive suggestions for improvements.
+---
 
 ## Install
+
 ```sh
 omarchy plugin add https://github.com/jesseburlamaque/omarchy-find.git --enable
 ```
@@ -29,9 +52,16 @@ Then restart the shell:
 omarchy restart shell
 ```
 
+---
+
 ## Usage
 
-Open with `omarchy-find`, the launcher app **Find**, or the magnifier icon on the bar.
+You can trigger Omarchy Find in three ways:
+1. Running `omarchy-find` in terminal or binding it to a shortcut in your window manager (e.g. `bind = $mainMod, Space, exec, omarchy-find`).
+2. Clicking the **Find** icon in your application launcher.
+3. Clicking the magnifier icon (`󰍉`) on the Omarchy status bar.
+
+### Keyboard Shortcuts
 
 | Shortcut | Description |
 | -------- | ----------- |
@@ -51,6 +81,8 @@ Open with `omarchy-find`, the launcher app **Find**, or the magnifier icon on th
 | `Ctrl+W` / `Ctrl+Backspace` | Delete previous word in search input |
 | `Ctrl+U` | Clear entire search query |
 | `Esc` | Clear query if typed, or close overlay if query is empty |
+
+---
 
 ## Enable / Disable
 
@@ -91,6 +123,14 @@ Then restart the shell:
 ```sh
 omarchy restart shell
 ```
+
+---
+
+## Feedback & Contributions
+
+This project is a work in progress — suggestions, bug reports, and improvements are very welcome!
+
+---
 
 ## License
 
