@@ -79,10 +79,16 @@ var LOCALES = {
     noResults: "Sem resultados para \"",
     noRecent: "Nada recente por aqui",
     expand: "Expandir", collapse: "Recolher",
-    footer: "↑↓ navegar · Tab trocar filtro · Enter abrir · Esc fechar\nAlt+Enter abrir pasta · Ctrl+C copiar caminho · Ctrl+T abrir terminal",
+    footer: "↑↓ navegar · Tab trocar filtro · Ctrl+S ordenar · Enter abrir · Esc fechar\nAlt+Enter abrir pasta · Ctrl+C copiar caminho · Ctrl+T abrir terminal",
     googleSearch: "Busca no Google",
     searchGoogleFor: "Buscar no Google por \"",
-    googleFooter: "Enter abrir no navegador · Esc fechar"
+    googleFooter: "Enter abrir no navegador · Esc fechar",
+    sortBy: "Ordenar por",
+    relevance: "Relevância",
+    mtimeDesc: "Mais Recentes",
+    mtimeAsc: "Mais Antigos",
+    nameAsc: "Nome (A → Z)",
+    nameDesc: "Nome (Z → A)"
   },
   en: {
     all: "All", folders: "Folders", systemFolders: "System Folders", docs: "Documents", images: "Images",
@@ -94,11 +100,39 @@ var LOCALES = {
     noResults: "No results for \"",
     noRecent: "Nothing recent here",
     expand: "Expand", collapse: "Collapse",
-    footer: "↑↓ navigate · Tab switch filter · Enter open · Esc close\nAlt+Enter open folder · Ctrl+C copy path · Ctrl+T open terminal",
+    footer: "↑↓ navigate · Tab switch filter · Ctrl+S sort · Enter open · Esc close\nAlt+Enter open folder · Ctrl+C copy path · Ctrl+T open terminal",
     googleSearch: "Google Search",
     searchGoogleFor: "Search Google for \"",
-    googleFooter: "Enter open in browser · Esc close"
+    googleFooter: "Enter open in browser · Esc close",
+    sortBy: "Sort by",
+    relevance: "Relevance",
+    mtimeDesc: "Most Recent",
+    mtimeAsc: "Oldest",
+    nameAsc: "Name (A → Z)",
+    nameDesc: "Name (Z → A)"
   }
+}
+
+var SORT_MODES = [
+  { id: "relevance",  labelKey: "relevance",  icon: "󰓥" },
+  { id: "mtime_desc", labelKey: "mtimeDesc",  icon: "󰔚" },
+  { id: "mtime_asc",  labelKey: "mtimeAsc",   icon: "󰔛" },
+  { id: "name_asc",   labelKey: "nameAsc",    icon: "󰚔" },
+  { id: "name_desc",  labelKey: "nameDesc",   icon: "󰚕" }
+]
+
+function sortIcon(sortId) {
+  for (var i = 0; i < SORT_MODES.length; i++) {
+    if (SORT_MODES[i].id === sortId) return SORT_MODES[i].icon
+  }
+  return "󰓥"
+}
+
+function sortLabelKey(sortId) {
+  for (var i = 0; i < SORT_MODES.length; i++) {
+    if (SORT_MODES[i].id === sortId) return SORT_MODES[i].labelKey
+  }
+  return "relevance"
 }
 
 function pickBucket(locale) {
@@ -338,17 +372,45 @@ function scoreItem(item, query) {
   return total
 }
 
-function rankResults(items, query, limit, home) {
+function rankResults(items, query, limit, home, sortMode) {
+  var mode = sortMode || "relevance"
   var q = query.trim().toLowerCase()
   if (q.length === 0) {
     var copy = items.slice()
-    copy.sort(function(a, b) {
-      var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
-      var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
-      if (aSys !== bSys) return aSys ? 1 : -1
-      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-      return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0)
-    })
+    if (mode === "name_asc") {
+      copy.sort(function(a, b) {
+        var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
+        var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
+        if (aSys !== bSys) return aSys ? 1 : -1
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+      })
+    } else if (mode === "name_desc") {
+      copy.sort(function(a, b) {
+        var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
+        var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
+        if (aSys !== bSys) return aSys ? 1 : -1
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+        return b.name.toLowerCase().localeCompare(a.name.toLowerCase())
+      })
+    } else if (mode === "mtime_asc") {
+      copy.sort(function(a, b) {
+        var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
+        var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
+        if (aSys !== bSys) return aSys ? 1 : -1
+        return (a.mtimeMs || 0) - (b.mtimeMs || 0)
+      })
+    } else {
+      // "relevance" or "mtime_desc"
+      copy.sort(function(a, b) {
+        var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
+        var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
+        if (aSys !== bSys) return aSys ? 1 : -1
+        if (a.mtimeMs && b.mtimeMs && a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+        return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0)
+      })
+    }
     return copy.slice(0, limit)
   }
   var scored = []
@@ -359,18 +421,42 @@ function rankResults(items, query, limit, home) {
       scored.push({ item: items[i], score: s, isSystem: isSys })
     }
   }
-  scored.sort(function(a, b) {
-    // 1. Better query relevance score comes first! (Exact match beats fuzzy)
-    if (a.score !== b.score) return a.score - b.score
-    // 2. For items with equal score, prefer user files/folders over system/hidden files
-    if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
-    // 3. Directories before files
-    if (a.item.isDir !== b.item.isDir) return a.item.isDir ? -1 : 1
-    // 4. Shorter name length
-    if (a.item.name.length !== b.item.name.length) return a.item.name.length - b.item.name.length
-    // 5. Alphabetical path
-    return a.item.path < b.item.path ? -1 : (a.item.path > b.item.path ? 1 : 0)
-  })
+
+  if (mode === "name_asc") {
+    scored.sort(function(a, b) {
+      if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+      return a.item.name.toLowerCase().localeCompare(b.item.name.toLowerCase())
+    })
+  } else if (mode === "name_desc") {
+    scored.sort(function(a, b) {
+      if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+      return b.item.name.toLowerCase().localeCompare(a.item.name.toLowerCase())
+    })
+  } else if (mode === "mtime_asc") {
+    scored.sort(function(a, b) {
+      if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+      return (a.item.mtimeMs || 0) - (b.item.mtimeMs || 0)
+    })
+  } else if (mode === "mtime_desc") {
+    scored.sort(function(a, b) {
+      if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+      return (b.item.mtimeMs || 0) - (a.item.mtimeMs || 0)
+    })
+  } else {
+    // "relevance"
+    scored.sort(function(a, b) {
+      // 1. Better query relevance score comes first! (Exact match beats fuzzy)
+      if (a.score !== b.score) return a.score - b.score
+      // 2. For items with equal score, prefer user files/folders over system/hidden files
+      if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+      // 3. Directories before files
+      if (a.item.isDir !== b.item.isDir) return a.item.isDir ? -1 : 1
+      // 4. Shorter name length
+      if (a.item.name.length !== b.item.name.length) return a.item.name.length - b.item.name.length
+      // 5. Alphabetical path
+      return a.item.path < b.item.path ? -1 : (a.item.path > b.item.path ? 1 : 0)
+    })
+  }
   var out = []
   for (var j = 0; j < scored.length && j < limit; j++) out.push(scored[j].item)
   return out

@@ -56,6 +56,10 @@ Item {
   property int cardWidth: Math.min(Style.space(660), panel.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(520), panel.height - Style.gapsOut * 2)
   property int rowHeight: Math.max(Style.space(44), Style.font.body + Style.space(20))
+  property string sortMode: "relevance"
+  property bool sortMenuOpen: false
+  property var rawItems: []
+  property var mtimesMap: ({})
 
   function pluginId() {
     return (root.manifest && root.manifest.id) || "jesseburlamaque.omarchy-find"
@@ -70,6 +74,7 @@ Item {
     root.opened = true
     root.activeFilter = 0
     root.manualExpand = false
+    root.sortMenuOpen = false
     root.setFilter(query)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -217,17 +222,26 @@ Item {
 
   function presentResults(items) {
     if (root.isGoogleSearch) return
-    var ranked = Backend.rankResults(items, root.filterText, Backend.DISPLAY_LIMIT, root.home)
+    root.rawItems = items || []
+    for (var j = 0; j < root.rawItems.length; j++) {
+      var it = root.rawItems[j]
+      if (root.mtimesMap[it.path] !== undefined) {
+        it.mtimeMs = root.mtimesMap[it.path]
+      }
+    }
+    var ranked = Backend.rankResults(root.rawItems, root.filterText, Backend.DISPLAY_LIMIT, root.home, root.sortMode)
     displayModel.clear()
-
+    var now = Date.now()
     for (var i = 0; i < ranked.length; i++) {
+      var ms = ranked[i].mtimeMs
       displayModel.append({
         path: ranked[i].path,
         name: ranked[i].name,
         dir: ranked[i].dir,
         icon: ranked[i].icon,
         isDir: ranked[i].isDir,
-        mtime: ""
+        mtimeMs: ms !== undefined ? ms : 0,
+        mtime: ms ? Backend.formatMtime(ms, now, root.locale) : ""
       })
     }
     if (root.selectedIndex >= displayModel.count) root.selectedIndex = displayModel.count - 1
@@ -257,44 +271,48 @@ Item {
   function applyMtimes(map) {
     root.mtimesLoaded = true
     var now = Date.now()
-    if (root.filterText.trim() !== "") {
-      // Keep relevance ranking, fill mtimes.
-      for (var i = 0; i < displayModel.count; i++) {
-        var path = displayModel.get(i).path
-        if (path.indexOf("http://") === 0 || path.indexOf("https://") === 0) continue
-        var ms = map[path]
-        displayModel.setProperty(i, "mtime", ms === undefined ? "" : Backend.formatMtime(ms, now, root.locale))
+    for (var k in map) {
+      root.mtimesMap[k] = map[k]
+    }
+    for (var j = 0; j < root.rawItems.length; j++) {
+      var it = root.rawItems[j]
+      if (map[it.path] !== undefined) {
+        it.mtimeMs = map[it.path]
       }
-      return
     }
-    // Empty query: sort user files first, then system files, sorted by newest.
-    var entries = []
-    for (var j = 0; j < displayModel.count; j++) {
-      var row = displayModel.get(j)
-      var m = map[row.path]
-      entries.push({
-        path: row.path, name: row.name, dir: row.dir, icon: row.icon,
-        isDir: row.isDir, isSystem: Backend.isSystemPath(row.path, root.home),
-        ms: (m === undefined ? -1 : m)
-      })
-    }
-    entries.sort(function(a, b) {
-      if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
-      return b.ms - a.ms
-    })
+    var ranked = Backend.rankResults(root.rawItems, root.filterText, Backend.DISPLAY_LIMIT, root.home, root.sortMode)
     displayModel.clear()
-    for (var k = 0; k < entries.length; k++) {
+    for (var i = 0; i < ranked.length; i++) {
+      var ms = ranked[i].mtimeMs
       displayModel.append({
-        path: entries[k].path,
-        name: entries[k].name,
-        dir: entries[k].dir,
-        icon: entries[k].icon,
-        isDir: entries[k].isDir,
-        mtime: entries[k].ms >= 0 ? Backend.formatMtime(entries[k].ms, now, root.locale) : ""
+        path: ranked[i].path,
+        name: ranked[i].name,
+        dir: ranked[i].dir,
+        icon: ranked[i].icon,
+        isDir: ranked[i].isDir,
+        mtimeMs: ms !== undefined ? ms : 0,
+        mtime: ms ? Backend.formatMtime(ms, now, root.locale) : ""
       })
     }
-    root.selectedIndex = 0
-    resultList.positionViewAtIndex(0, ListView.Contain)
+    if (root.selectedIndex >= displayModel.count) root.selectedIndex = displayModel.count - 1
+    if (root.selectedIndex < 0) root.selectedIndex = 0
+    resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+  }
+
+  function setSortMode(mode) {
+    root.sortMode = mode
+    root.sortMenuOpen = false
+    root.presentResults(root.rawItems)
+  }
+
+  function cycleSortMode() {
+    var modes = Backend.SORT_MODES
+    var idx = 0
+    for (var i = 0; i < modes.length; i++) {
+      if (modes[i].id === root.sortMode) { idx = i; break }
+    }
+    var nextIdx = (idx + 1) % modes.length
+    root.setSortMode(modes[nextIdx].id)
   }
 
   function select(delta) {
@@ -443,8 +461,16 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           if (event.key === Qt.Key_Escape) {
-            if (root.filterText) root.setFilter("")
-            else root.dismiss()
+            if (root.sortMenuOpen) {
+              root.sortMenuOpen = false
+            } else if (root.filterText) {
+              root.setFilter("")
+            } else {
+              root.dismiss()
+            }
+            event.accepted = true
+          } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_S) {
+            root.cycleSortMode()
             event.accepted = true
           } else if (event.key === Qt.Key_Tab) {
             if (root.isGoogleSearch) {
@@ -627,20 +653,66 @@ Item {
           }
         }
 
+        Row {
+          id: sortBar
+          visible: root.expanded && !root.isGoogleSearch
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: Style.spacing.xs
+
+          Repeater {
+            model: Backend.SORT_MODES
+
+            delegate: Row {
+              id: sortItem
+              required property int index
+              required property var modelData
+              readonly property bool isSelected: sortItem.modelData.id === root.sortMode
+
+              spacing: Style.spacing.xs
+
+              Text {
+                visible: sortItem.index > 0
+                anchors.verticalCenter: parent.verticalCenter
+                text: "·"
+                color: root.foreground
+                opacity: 0.35
+                font.family: root.fontFamily
+                font.pixelSize: Math.max(10, Style.font.body - 2)
+              }
+
+              Text {
+                id: sortLabel
+                anchors.verticalCenter: parent.verticalCenter
+                text: Backend.t(sortItem.modelData.labelKey, root.locale)
+                color: sortItem.isSelected ? root.accent : root.foreground
+                opacity: sortItem.isSelected ? 1 : (sortMouse.containsMouse ? 0.9 : 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Math.max(10, Style.font.body - 2)
+                font.weight: sortItem.isSelected ? Font.DemiBold : Font.Normal
+
+                MouseArea {
+                  id: sortMouse
+                  anchors.fill: parent
+                  anchors.margins: -4
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.setSortMode(sortItem.modelData.id)
+                }
+              }
+            }
+          }
+        }
+
         Item {
           visible: root.expanded && (!root.isGoogleSearch || root.googleSearchTerms !== "")
           width: parent.width
           height: root.isGoogleSearch
             ? root.rowHeight
-            : Math.max(0, parent.height - searchField.height - (chips.visible ? chips.height : 0) - footer.implicitHeight - root.contentSpacing * 3)
+            : Math.max(0, parent.height - searchField.height - (chips.visible ? chips.height : 0) - (sortBar.visible ? sortBar.height : 0) - (countLabel.visible ? countLabel.implicitHeight : 0) - footer.implicitHeight - root.contentSpacing * (countLabel.visible ? 5 : 4))
 
           ListView {
             id: resultList
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: countLabel.visible ? countLabel.height + Style.space(4) : 0
+            anchors.fill: parent
             model: displayModel
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -767,22 +839,22 @@ Item {
               width: parent.width
             }
           }
+        }
 
-          Text {
-            id: countLabel
-            visible: !root.isGoogleSearch && (text !== "")
-            anchors.bottom: parent.bottom
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: root.searching
-              ? Backend.t("searching", root.locale)
-              : (displayModel.count > 0
-                 ? displayModel.count + Backend.t(displayModel.count === 1 ? "result" : "results", root.locale)
-                 : "")
-            color: root.accent
-            opacity: 0.8
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-          }
+        Text {
+          id: countLabel
+          visible: root.expanded && !root.isGoogleSearch && (text !== "")
+          width: parent.width
+          horizontalAlignment: Text.AlignHCenter
+          text: root.searching
+            ? Backend.t("searching", root.locale)
+            : (displayModel.count > 0
+               ? displayModel.count + Backend.t(displayModel.count === 1 ? "result" : "results", root.locale)
+               : "")
+          color: root.accent
+          opacity: 0.85
+          font.family: root.fontFamily
+          font.pixelSize: Math.max(10, Style.font.body - 1)
         }
 
         Text {

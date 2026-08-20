@@ -6,6 +6,7 @@ A Spotlight-style file search for the Omarchy shell. Summon the overlay, type to
 
 - **Fuzzy and full-path search** powered by `fd`, with relevance scoring and smart ranking
 - **Type filters:** All, Folders (User home), System Folders (`.config`, `omarchy`, `hypr`, etc.), Documents, Images, Videos, Audio, Code and Recent — cycle with Tab or click the chips
+- **Sort options:** Relevance, Most Recent, Oldest, Name (A → Z) and Name (Z → A) — switch with 1 click or `Ctrl+S`
 - **Direct Google Search:** type `go <query>` to search on Google directly in your default browser
 - **Rich keyboard navigation:** navigate with arrow keys or readline (`Ctrl+N`/`P`) / vim (`Ctrl+J`/`K`)
 - **Quick actions:** open file/folder, reveal parent directory in file manager (`Alt+Enter`), copy path (`Ctrl+C`), open terminal (`Ctrl+T`)
@@ -42,6 +43,7 @@ Open with `omarchy-find`, the launcher app **Find**, or the magnifier icon on th
 | `PageUp / PageDown` | Scroll page up / down (6 items) |
 | `Home / End` | Jump to first / last result |
 | `Tab` | Cycle through type filters |
+| `Ctrl+S` | Cycle through sort modes (Relevance, Recent, Oldest, A-Z, Z-A) |
 | `Enter` or click | Open selected file or folder with default application |
 | `Alt+Enter` | Open enclosing folder in default file manager |
 | `Ctrl+C` | Copy absolute file/folder path to clipboard (`wl-copy`) |
