@@ -4,13 +4,15 @@ A Spotlight-style file search for the Omarchy shell. Summon the overlay, type to
 
 ## Features
 
-- **Fuzzy search** powered by `fd`, with fzf-style multi-term ranking
-- **Type filters:** All, Folders, Documents, Images, Videos, Audio, Code and Recent — cycle with Tab or click the chips
+- **Fuzzy and full-path search** powered by `fd`, with relevance scoring and smart ranking
+- **Type filters:** All, Folders (User home), System Folders (`.config`, `omarchy`, `hypr`, etc.), Documents, Images, Videos, Audio, Code and Recent — cycle with Tab or click the chips
+- **Direct Google Search:** type `go <query>` to search on Google directly in your default browser
+- **Rich keyboard navigation:** navigate with arrow keys or readline (`Ctrl+N`/`P`) / vim (`Ctrl+J`/`K`)
+- **Quick actions:** open file/folder, reveal parent directory in file manager (`Alt+Enter`), copy path (`Ctrl+C`), open terminal (`Ctrl+T`)
 - **Recent suggestions:** open with no query to see files changed in the last 30 days, most recent first
-- **Enter or click to open** the selected file or folder with the default app (`xdg-open`)
 - **Bar widget:** magnifier icon that toggles the search overlay
 - **CLI + launcher app:** `omarchy-find` command and a **Find** app in the launcher
-- Noisy directories excluded from search (`.git`, `node_modules`, caches, trash…)
+- Noisy directories excluded from search (`.git`, `node_modules`, caches, trash, internal browser storages…)
 - Follows the active Omarchy theme colors
 
 This project is a work in progress — I'd be happy to receive suggestions for improvements.
@@ -30,14 +32,23 @@ omarchy restart shell
 
 Open with `omarchy-find`, the launcher app **Find**, or the magnifier icon on the bar.
 
-| Action | What it does |
-| ------ | ------------ |
-| Type | Search — results update as you type |
-| ↑ / ↓ | Navigate the results |
-| PageUp / PageDown, Home / End | Navigate faster through the results |
-| Tab / Shift+Tab | Cycle the type filters |
-| Enter or click | Open the selected file or folder |
-| Esc | Clear the query, or close the overlay if the query is empty |
+| Shortcut | Description |
+| -------- | ----------- |
+| `Type` | Search files, folders and paths in real time |
+| `go <query>` | Instant Google Search in default browser |
+| `↑ / ↓` | Navigate up / down through results |
+| `Ctrl+N / Ctrl+P` | Readline-style next / previous item navigation |
+| `Ctrl+J / Ctrl+K` | Vim-style next / previous item navigation |
+| `PageUp / PageDown` | Scroll page up / down (6 items) |
+| `Home / End` | Jump to first / last result |
+| `Tab` | Cycle through type filters |
+| `Enter` or click | Open selected file or folder with default application |
+| `Alt+Enter` | Open enclosing folder in default file manager |
+| `Ctrl+C` | Copy absolute file/folder path to clipboard (`wl-copy`) |
+| `Ctrl+T` | Open terminal at selected item's directory |
+| `Ctrl+W` / `Ctrl+Backspace` | Delete previous word in search input |
+| `Ctrl+U` | Clear entire search query |
+| `Esc` | Clear query if typed, or close overlay if query is empty |
 
 ## Enable / Disable
 

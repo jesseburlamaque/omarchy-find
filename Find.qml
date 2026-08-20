@@ -320,6 +320,29 @@ Item {
     Quickshell.execDetached(["xdg-open", row.path])
   }
 
+  function openEnclosingFolder(index) {
+    if (index < 0 || index >= displayModel.count) return
+    var row = displayModel.get(index)
+    root.dismiss()
+    var target = row.isDir ? row.path : (row.path.slice(0, row.path.lastIndexOf("/")) || root.home)
+    Quickshell.execDetached(["xdg-open", target])
+  }
+
+  function copyPathToClipboard(index) {
+    if (index < 0 || index >= displayModel.count) return
+    var row = displayModel.get(index)
+    root.dismiss()
+    Quickshell.execDetached(["wl-copy", row.path])
+  }
+
+  function openInTerminal(index) {
+    if (index < 0 || index >= displayModel.count) return
+    var row = displayModel.get(index)
+    root.dismiss()
+    var target = row.isDir ? row.path : (row.path.slice(0, row.path.lastIndexOf("/")) || root.home)
+    Quickshell.execDetached(["bash", "-c", "cd " + Util.shellQuote(target) + " && (xdg-terminal-exec || omarchy-default-terminal || $TERMINAL || kitty || foot || alacritty)"])
+  }
+
   ListModel { id: displayModel }
 
   Timer {
@@ -433,23 +456,22 @@ Item {
               root.expandForBrowse()
               event.accepted = true
             }
-          } else if (event.key === Qt.Key_Backtab) {
-            if (root.isGoogleSearch) {
-              event.accepted = true
-            } else if (root.expanded) {
-              root.cycleFilter(-1)
-              event.accepted = true
-            } else {
-              root.expandForBrowse()
-              event.accepted = true
-            }
           } else if (Util.editsFilter(event, root.filterText)) {
             root.setFilter(Util.editedFilter(event, root.filterText))
             event.accepted = true
-          } else if (event.key === Qt.Key_Up) {
+          } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_W) {
+            root.setFilter(root.filterText.replace(/\s+$/, "").replace(/\S+$/, ""))
+            event.accepted = true
+          } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_C) {
+            root.copyPathToClipboard(root.selectedIndex)
+            event.accepted = true
+          } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_T) {
+            root.openInTerminal(root.selectedIndex)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Up || (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_P || event.key === Qt.Key_K))) {
             root.select(-1)
             event.accepted = true
-          } else if (event.key === Qt.Key_Down) {
+          } else if (event.key === Qt.Key_Down || (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_N || event.key === Qt.Key_J))) {
             root.select(1)
             event.accepted = true
           } else if (event.key === Qt.Key_PageUp) {
@@ -471,9 +493,13 @@ Item {
             }
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            root.activateIndex(root.selectedIndex)
+            if (event.modifiers & Qt.AltModifier) {
+              root.openEnclosingFolder(root.selectedIndex)
+            } else {
+              root.activateIndex(root.selectedIndex)
+            }
             event.accepted = true
-          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
+          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127 && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier)) {
             root.setFilter(root.filterText + event.text)
             event.accepted = true
           }
@@ -771,6 +797,7 @@ Item {
           opacity: 0.45
           font.family: root.fontFamily
           font.pixelSize: Math.max(10, Style.font.body - 2)
+          lineHeight: 1.25
         }
       }
     }
