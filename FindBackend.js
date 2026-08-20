@@ -172,23 +172,41 @@ function isSubsequence(needle, haystack) {
   return n === needle.length
 }
 
-// Fzf-like fuzzy pattern: space-separated terms as subsequences.
-function fuzzyPattern(query) {
-  var terms = query.trim().split(/\s+/)
-  var specials = "\\^$.[]|()?*+{}"
-  var parts = []
-  for (var t = 0; t < terms.length; t++) {
-    var term = terms[t]
-    var s = ""
-    for (var i = 0; i < term.length; i++) {
-      var ch = term.charAt(i)
-      if (specials.indexOf(ch) !== -1) s += "\\" + ch
-      else s += ch
-      if (i < term.length - 1) s += ".*"
+function permutations(arr) {
+  if (arr.length <= 1) return [arr]
+  var result = []
+  for (var i = 0; i < arr.length; i++) {
+    var current = arr[i]
+    var remaining = arr.slice(0, i).concat(arr.slice(i + 1))
+    var perms = permutations(remaining)
+    for (var j = 0; j < perms.length; j++) {
+      result.push([current].concat(perms[j]))
     }
-    parts.push(s)
   }
-  return parts.join(".*")
+  return result
+}
+
+function buildQueryPattern(query) {
+  var rawTerms = query.trim().split(/\s+/)
+  var terms = []
+  for (var t = 0; t < rawTerms.length; t++) {
+    if (rawTerms[t].length > 0) {
+      terms.push(rawTerms[t].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    }
+  }
+  if (terms.length === 0) return "."
+  if (terms.length === 1) return terms[0]
+
+  if (terms.length <= 3) {
+    var perms = permutations(terms)
+    var parts = []
+    for (var p = 0; p < perms.length; p++) {
+      parts.push(perms[p].join(".*"))
+    }
+    return "(" + parts.join("|") + ")"
+  }
+
+  return terms.join(".*")
 }
 
 // Builds fd arguments. Empty query lists recent items.
@@ -226,11 +244,11 @@ function buildArgv(query, filterIndex, forDirs, home) {
       argv.push(".")
     }
   } else {
-    var escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    var pattern = buildQueryPattern(q)
     if (filter.systemFolders) {
-      argv.push("/\\.config.*" + escaped)
+      argv.push("/\\.config.*" + pattern)
     } else {
-      argv.push(escaped)
+      argv.push(pattern)
     }
   }
 
