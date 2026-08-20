@@ -56,12 +56,20 @@ omarchy restart shell
 
 ## Usage
 
-You can trigger Omarchy Find in three ways:
-1. Running `omarchy-find` in terminal or binding it to a shortcut in your window manager (e.g. `bind = $mainMod, Space, exec, omarchy-find`).
-2. Clicking the **Find** icon in your application launcher.
-3. Clicking the magnifier icon (`󰍉`) on the Omarchy status bar.
+You can summon Omarchy Find in four convenient ways:
 
-### Keyboard Shortcuts
+1. **Global Keyboard Shortcut (`Alt + Space`)** *(Recommended)*:
+   Add the following line to `~/.config/hypr/bindings.lua` to open Find from anywhere:
+   ```lua
+   o.bind("ALT + SPACE", "Find files & folders", "omarchy-find")
+   ```
+2. **Status Bar Widget**: Click the magnifier icon (`󰍉`) on the Omarchy top bar.
+3. **Application Launcher**: Open the Omarchy app launcher and click **Find**.
+4. **CLI / Terminal**:
+   - `omarchy-find` — Toggle the search overlay.
+   - `omarchy-find open '{"query":"notes"}'` — Open with a pre-filled query.
+
+### In-App Keyboard Shortcuts
 
 | Shortcut | Description |
 | -------- | ----------- |
