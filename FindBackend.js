@@ -217,6 +217,18 @@ function iconFor(name, isDir) {
   return "󰈔"
 }
 
+function isSystemPath(path, home) {
+  var p = String(path || "")
+  if (!home || p.indexOf(home) !== 0) return true
+  var rel = p.slice(home.length)
+  if (rel.charAt(0) === "/") rel = rel.slice(1)
+  var parts = rel.split("/")
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i].charAt(0) === ".") return true
+  }
+  return false
+}
+
 function parseLines(text, isDir, home) {
   var out = []
   var lines = String(text || "").split("\n")
@@ -231,6 +243,7 @@ function parseLines(text, isDir, home) {
       name: name,
       dir: parentDir(path, home),
       isDir: isDir,
+      isSystem: isSystemPath(path, home),
       icon: iconFor(name, isDir)
     })
   }
@@ -269,15 +282,30 @@ function scoreItem(item, query) {
   return total
 }
 
-function rankResults(items, query, limit) {
+function rankResults(items, query, limit, home) {
   var q = query.trim().toLowerCase()
-  if (q.length === 0) return items.slice(0, limit)
+  if (q.length === 0) {
+    var copy = items.slice()
+    copy.sort(function(a, b) {
+      var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
+      var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
+      if (aSys !== bSys) return aSys ? 1 : -1
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+      return 0
+    })
+    return copy.slice(0, limit)
+  }
   var scored = []
   for (var i = 0; i < items.length; i++) {
     var s = scoreItem(items[i], q)
-    if (s >= 0) scored.push({ item: items[i], score: s })
+    if (s >= 0) {
+      var isSys = items[i].isSystem !== undefined ? items[i].isSystem : isSystemPath(items[i].path, home)
+      scored.push({ item: items[i], score: s, isSystem: isSys })
+    }
   }
   scored.sort(function(a, b) {
+    // User files/folders first, system/hidden files last
+    if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
     if (a.score !== b.score) return a.score - b.score
     if (a.item.isDir !== b.item.isDir) return a.item.isDir ? -1 : 1
     if (a.item.name.length !== b.item.name.length) return a.item.name.length - b.item.name.length

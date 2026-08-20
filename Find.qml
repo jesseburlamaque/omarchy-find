@@ -217,7 +217,7 @@ Item {
 
   function presentResults(items) {
     if (root.isGoogleSearch) return
-    var ranked = Backend.rankResults(items, root.filterText, Backend.DISPLAY_LIMIT)
+    var ranked = Backend.rankResults(items, root.filterText, Backend.DISPLAY_LIMIT, root.home)
     displayModel.clear()
 
     for (var i = 0; i < ranked.length; i++) {
@@ -267,28 +267,32 @@ Item {
       }
       return
     }
-    // Empty query: sort by newest.
+    // Empty query: sort user files first, then system files, sorted by newest.
     var entries = []
     for (var j = 0; j < displayModel.count; j++) {
       var row = displayModel.get(j)
       var m = map[row.path]
       entries.push({
         path: row.path, name: row.name, dir: row.dir, icon: row.icon,
-        isDir: row.isDir, ms: (m === undefined ? -1 : m)
+        isDir: row.isDir, isSystem: Backend.isSystemPath(row.path, root.home),
+        ms: (m === undefined ? -1 : m)
       })
     }
-    entries.sort(function(a, b) { return b.ms - a.ms })
-      displayModel.clear()
-      for (var k = 0; k < entries.length; k++) {
-        displayModel.append({
-          path: entries[k].path,
-          name: entries[k].name,
-          dir: entries[k].dir,
-          icon: entries[k].icon,
-          isDir: entries[k].isDir,
-          mtime: entries[k].ms >= 0 ? Backend.formatMtime(entries[k].ms, now, root.locale) : ""
-        })
-      }
+    entries.sort(function(a, b) {
+      if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
+      return b.ms - a.ms
+    })
+    displayModel.clear()
+    for (var k = 0; k < entries.length; k++) {
+      displayModel.append({
+        path: entries[k].path,
+        name: entries[k].name,
+        dir: entries[k].dir,
+        icon: entries[k].icon,
+        isDir: entries[k].isDir,
+        mtime: entries[k].ms >= 0 ? Backend.formatMtime(entries[k].ms, now, root.locale) : ""
+      })
+    }
     root.selectedIndex = 0
     resultList.positionViewAtIndex(0, ListView.Contain)
   }
