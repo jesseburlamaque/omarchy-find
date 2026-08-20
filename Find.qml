@@ -105,6 +105,27 @@ Item {
     root.selectedIndex = 0
     if (nextFilter.trim() !== "") root.expanded = true
     else if (!root.manualExpand) root.expanded = false
+
+    var query = nextFilter.trim()
+    if (/^go\s+/i.test(query)) {
+      var searchTerms = query.slice(3).trim()
+      if (searchTerms.length > 0) {
+        displayModel.clear()
+        displayModel.append({
+          path: "https://www.google.com/search?q=" + encodeURIComponent(searchTerms),
+          name: "Search Google for \"" + searchTerms + "\"",
+          dir: "Google Search",
+          icon: "󰍉",
+          isDir: false,
+          mtime: ""
+        })
+      }
+    } else {
+      if (displayModel.count > 0 && displayModel.get(0).dir === "Google Search") {
+        displayModel.remove(0)
+      }
+    }
+
     debounce.restart()
   }
 
@@ -189,6 +210,22 @@ Item {
   function presentResults(items) {
     var ranked = Backend.rankResults(items, root.filterText, Backend.DISPLAY_LIMIT)
     displayModel.clear()
+
+    var query = root.filterText.trim()
+    if (/^go\s+/i.test(query)) {
+      var searchTerms = query.slice(3).trim()
+      if (searchTerms.length > 0) {
+        displayModel.append({
+          path: "https://www.google.com/search?q=" + encodeURIComponent(searchTerms),
+          name: "Search Google for \"" + searchTerms + "\"",
+          dir: "Google Search",
+          icon: "󰍉",
+          isDir: false,
+          mtime: ""
+        })
+      }
+    }
+
     for (var i = 0; i < ranked.length; i++) {
       displayModel.append({
         path: ranked[i].path,
@@ -209,7 +246,15 @@ Item {
   function fetchMtimes() {
     if (displayModel.count === 0 || procStat.running) return
     var argv = ["stat", "-c", "%Y\t%n", "--"]
-    for (var i = 0; i < displayModel.count; i++) argv.push(displayModel.get(i).path)
+    var hasPaths = false
+    for (var i = 0; i < displayModel.count; i++) {
+      var path = displayModel.get(i).path
+      if (path.indexOf("http://") !== 0 && path.indexOf("https://") !== 0) {
+        argv.push(path)
+        hasPaths = true
+      }
+    }
+    if (!hasPaths) return
     procStat.gen = root.searchGen
     procStat.command = argv
     procStat.running = true
@@ -221,7 +266,9 @@ Item {
     if (root.filterText.trim() !== "") {
       // Keep relevance ranking, fill mtimes.
       for (var i = 0; i < displayModel.count; i++) {
-        var ms = map[displayModel.get(i).path]
+        var path = displayModel.get(i).path
+        if (path.indexOf("http://") === 0 || path.indexOf("https://") === 0) continue
+        var ms = map[path]
         displayModel.setProperty(i, "mtime", ms === undefined ? "" : Backend.formatMtime(ms, now, root.locale))
       }
       return
