@@ -172,6 +172,35 @@ function isSubsequence(needle, haystack) {
   return n === needle.length
 }
 
+function stripAccents(str) {
+  return String(str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+}
+
+var ACCENT_MAP = {
+  "a": "[aáàãâäAÁÀÃÂÄ]",
+  "e": "[eéèêëEÉÈÊË]",
+  "i": "[iíìîïIÍÌÎÏ]",
+  "o": "[oóòõôöOÓÒÕÔÖ]",
+  "u": "[uúùûüUÚÙÛÜ]",
+  "c": "[cçCÇ]"
+}
+
+function accentRegex(term) {
+  var s = ""
+  for (var i = 0; i < term.length; i++) {
+    var ch = term.charAt(i).toLowerCase()
+    var base = stripAccents(ch)
+    if (ACCENT_MAP[base]) {
+      s += ACCENT_MAP[base]
+    } else {
+      var special = "\\^$.[]|()?*+{}"
+      if (special.indexOf(ch) !== -1) s += "\\" + ch
+      else s += ch
+    }
+  }
+  return s
+}
+
 function permutations(arr) {
   if (arr.length <= 1) return [arr]
   var result = []
@@ -191,7 +220,7 @@ function buildQueryPattern(query) {
   var terms = []
   for (var t = 0; t < rawTerms.length; t++) {
     if (rawTerms[t].length > 0) {
-      terms.push(rawTerms[t].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      terms.push(accentRegex(rawTerms[t]))
     }
   }
   if (terms.length === 0) return "."
@@ -373,12 +402,13 @@ function scoreTerm(name, term) {
 
 // Scores item against query: matches all terms, fallback to path.
 function scoreItem(item, query) {
-  var name = item.name.toLowerCase()
-  var path = item.path.toLowerCase()
-  var terms = query.trim().toLowerCase().split(/\s+/)
+  var name = stripAccents(item.name.toLowerCase())
+  var path = stripAccents(item.path.toLowerCase())
+  var rawTerms = stripAccents(query.trim().toLowerCase()).split(/\s+/)
   var total = 0
-  for (var i = 0; i < terms.length; i++) {
-    var term = terms[i]
+  for (var i = 0; i < rawTerms.length; i++) {
+    var term = rawTerms[i]
+    if (!term) continue
     var s = scoreTerm(name, term)
     if (s < 0) {
       if (path.indexOf("/" + term) !== -1 || path.indexOf("/." + term) !== -1) s = 4
