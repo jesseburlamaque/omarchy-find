@@ -65,12 +65,9 @@ Item {
       if (payload && typeof payload.query === "string") query = payload.query
     } catch (e) { /* fallback on invalid payload */ }
     root.opened = true
-    root.filterText = query
-    root.selectedIndex = 0
     root.activeFilter = 0
     root.manualExpand = false
-    root.expanded = query.trim() !== ""
-    if (root.expanded) root.runSearch()
+    root.setFilter(query)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
