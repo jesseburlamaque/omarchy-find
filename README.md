@@ -86,8 +86,6 @@ omarchy plugin update jesseburlamaque.omarchy-find --yes
 omarchy plugin remove jesseburlamaque.omarchy-find
 ```
 
-If you installed through `install.sh`, run `./install.sh --disable` instead so the CLI and the launcher app are removed as well.
-
 Then restart the shell:
 
 ```sh
