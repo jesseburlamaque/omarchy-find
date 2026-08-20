@@ -1,13 +1,12 @@
 .pragma library
 
-// Backend do omarchy-find: define os filtros por tipo, monta a linha de
-// comando do fd e ranqueia os resultados em JS (estilo fzf, sem TUI).
+// Backend: configures filters, builds fd command, and ranks results.
 
 var MAX_RESULTS = 250
 var DISPLAY_LIMIT = 60
 var EMPTY_QUERY_DAYS = 30
 
-// Diretórios ruidosos que nunca interessam numa busca estilo Spotlight.
+// Excluded noisy directories.
 var EXCLUDES = [
   ".git",
   "node_modules",
@@ -38,9 +37,7 @@ var CODE_EXTS = ["c", "h", "cpp", "cxx", "cc", "hpp", "hh", "rs", "go", "py", "p
   "zig", "cs", "swift", "dart", "ex", "exs", "hs", "ml", "r", "jl", "nim", "v",
   "cmake", "mk", "ini", "conf", "cfg"]
 
-// Traduções por locale. Para adicionar um novo idioma, basta adicionar uma
-// nova entrada (ex.: LOCALES.de = { all: "Alle", ... }) e o fallback cuida do
-// resto. Idiomas desconhecidos usam o inglês como língua-franca.
+// Locale translations with English fallback.
 var LOCALES = {
   pt: {
     all: "Tudo", folders: "Pastas", docs: "Documentos", images: "Imagens",
@@ -70,8 +67,7 @@ var LOCALES = {
 
 function pickBucket(locale) {
   var l = String(locale || "")
-  // Tenta o locale completo (ex.: "pt_BR"), depois o prefixo ("pt"),
-  // depois o inglês como fallback universal.
+  // Try full locale, then prefix, fallback to English.
   if (LOCALES[l]) return LOCALES[l]
   var prefix = l.split(/[-_]/)[0]
   if (LOCALES[prefix]) return LOCALES[prefix]
@@ -105,8 +101,7 @@ function isSubsequence(needle, haystack) {
   return n === needle.length
 }
 
-// Regex fuzzy estilo fzf: "nota fiscal" -> "n.*o.*t.*a.* .*f.*i..." não —
-// espaços viram separadores, então cada termo vira subsequência em ordem.
+// Fzf-like fuzzy pattern: space-separated terms as subsequences.
 function fuzzyPattern(query) {
   var terms = query.trim().split(/\s+/)
   var specials = "\\^$.[]|()?*+{}"
@@ -125,8 +120,7 @@ function fuzzyPattern(query) {
   return parts.join(".*")
 }
 
-// Monta o argv do fd para um dos dois streams (dirs ou files).
-// query vazia lista itens recentes (comportamento "sugestões" do Spotlight).
+// Builds fd arguments. Empty query lists recent items.
 function buildArgv(query, filterIndex, forDirs, home) {
   var filter = FILTERS[filterIndex] || FILTERS[0]
   var argv = ["fd", "--color=never", "--max-results", String(MAX_RESULTS)]
@@ -153,8 +147,7 @@ function basename(path) {
   return idx === -1 ? path : path.slice(idx + 1)
 }
 
-// Parse da saída de `stat -c '%Y\t%n'`: retorna mapa { "/caminho": epochMs }.
-// Caminhos com espaços funcionam (split no primeiro TAB); lixo é ignorado.
+// Parses stat output format: "%Y\t%n".
 function parseStatLines(text) {
   var map = {}
   var lines = String(text || "").split("\n")
@@ -173,9 +166,7 @@ function pad2(n) {
   return (n < 10 ? "0" : "") + n
 }
 
-// Data+hora amigável seguindo o idioma: "Hoje/Today 14:32",
-// "Ontem/Yesterday 09:05", "18/08 14:32" no ano corrente,
-// "31/12/24 14:32" em outros anos.
+// Formats timestamps relative to current date.
 function formatMtime(msec, nowMs, locale) {
   var d = new Date(msec)
   var now = new Date(nowMs === undefined ? Date.now() : nowMs)
@@ -224,7 +215,7 @@ function parseLines(text, isDir, home) {
   var out = []
   var lines = String(text || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
-    // o fd imprime diretórios com "/" no final; remove antes de extrair o nome
+    // Strip trailing slash from directories.
     var path = lines[i].replace(/\/+$/, "")
     if (!path || path.charAt(0) !== "/") continue
     var name = basename(path)
@@ -240,7 +231,7 @@ function parseLines(text, isDir, home) {
   return out
 }
 
-// Pontua um único termo contra o nome. Menor é melhor; -1 = sem match.
+// Scores term against filename: lower is better, -1 is no match.
 function scoreTerm(name, term) {
   if (name === term) return 0
   if (name.indexOf(term) === 0) return 1
@@ -254,8 +245,7 @@ function scoreTerm(name, term) {
   return -1
 }
 
-// Menor é melhor; -1 descarta o item. Query multi-termo: cada termo precisa
-// casar (nome primeiro, caminho como fallback), como no fzf.
+// Scores item against query: matches all terms, fallback to path.
 function scoreItem(item, query) {
   var name = item.name.toLowerCase()
   var path = item.path.toLowerCase()

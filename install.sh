@@ -1,13 +1,9 @@
 #!/bin/bash
 
-# omarchy-find — instala o plugin no omarchy-shell sem tocar em
-# /usr/share/omarchy: copia os arquivos para ~/.config/omarchy/plugins/<id>,
-# instala o CLI em ~/.local/bin e habilita o plugin via `omarchy plugin
-# enable` (o próprio shell persiste a mudança no shell.json).
-#
-# Uso:
-#   ./install.sh            instala/atualiza e habilita
-#   ./install.sh --disable  desabilita e remove
+# Installs/uninstalls the plugin.
+# Usage:
+#   ./install.sh            Install & enable
+#   ./install.sh --disable  Disable & remove
 
 set -euo pipefail
 
@@ -68,6 +64,6 @@ omarchy plugin enable "$PLUGIN_ID"
 
 echo
 echo "Pronto! Abra com:"
-echo "  omarchy-find            # fecha se já estiver aberto"
+echo "  omarchy-find            # closes if already open"
 echo "  omarchy-find open '{\"query\":\"notas\"}'"
 echo "ou clique na lupa 󰍉 na barra."

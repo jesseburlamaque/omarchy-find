@@ -14,9 +14,9 @@ Item {
   property var manifest: null
 
   property bool opened: false
-  // Começa como faixa estreita; expande ao digitar ou no botão Expandir.
+  // Starts narrow, expands when typing or button clicked.
   property bool expanded: false
-  // Expansão manual (botão/Tab): limpar o texto não encolhe de volta.
+  // Manual expansion persists when text is cleared.
   property bool manualExpand: false
   property string filterText: ""
   property int selectedIndex: 0
@@ -24,15 +24,14 @@ Item {
   property bool searching: false
   property string home: Quickshell.env("HOME")
 
-  // Guarda contra resultados atrasados de uma busca anterior.
+  // Protects against out-of-order search results.
   property int searchGen: 0
   property bool rerunPending: false
   property int pendingProcs: 0
   property var pendingItems: []
   property bool mtimesLoaded: false
 
-  // Tokens de tema compartilhados com o menu — temas que estilizam o menu
-  // estilizam o find também (mesmo padrão do plugin de emojis).
+  // Shared theme colors with menu.
   property color background: Color.menu.background
   property color foreground: Color.menu.text
   property color border: Color.menu.border
@@ -46,7 +45,7 @@ Item {
   property color chipIdle: Util.alpha(Color.menu.text, 0.07)
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
-  // Idioma do plugin segue o locale do sistema (padrão Omarchy).
+  // System locale.
   readonly property string locale: Qt.locale().name
   property int contentMargin: Style.spacing.panelPadding
   property int contentSpacing: Style.spacing.md
@@ -64,7 +63,7 @@ Item {
     try {
       var payload = JSON.parse(payloadJson || "{}")
       if (payload && typeof payload.query === "string") query = payload.query
-    } catch (e) { /* payload inválido: abre limpo */ }
+    } catch (e) { /* fallback on invalid payload */ }
     root.opened = true
     root.filterText = query
     root.selectedIndex = 0
@@ -109,8 +108,7 @@ Item {
     debounce.restart()
   }
 
-  // Botão Expandir / Tab no estado colapsado: abre o card completo
-  // (com query vazia isso lista os recentes).
+  // Expand card to browse (lists recent files if query is empty).
   function expandForBrowse() {
     root.manualExpand = true
     root.expanded = true
@@ -134,10 +132,10 @@ Item {
     root.setActiveFilter((root.activeFilter + delta + count) % count)
   }
 
-  // ------------------------------------------------------------ busca (fd)
+  // Search
 
   function runSearch() {
-    // Colapsado não há lista visível; a busca dispara só ao expandir.
+    // Search only when expanded.
     if (!root.expanded) return
     root.searchGen++
     if (procDirs.running || procFiles.running) {
@@ -207,8 +205,7 @@ Item {
     root.fetchMtimes()
   }
 
-  // Um único `stat` em lote pega o mtime dos resultados exibidos; processo
-  // nasce e morre em ~5 ms, nada fica em background.
+  // Batch stat for mtimes.
   function fetchMtimes() {
     if (displayModel.count === 0 || procStat.running) return
     var argv = ["stat", "-c", "%Y\t%n", "--"]
@@ -222,14 +219,14 @@ Item {
     root.mtimesLoaded = true
     var now = Date.now()
     if (root.filterText.trim() !== "") {
-      // Busca com texto: mantém o ranking por relevância, só preenche as datas.
+      // Keep relevance ranking, fill mtimes.
       for (var i = 0; i < displayModel.count; i++) {
         var ms = map[displayModel.get(i).path]
         displayModel.setProperty(i, "mtime", ms === undefined ? "" : Backend.formatMtime(ms, now, root.locale))
       }
       return
     }
-    // Query vazia (sugestões / chip Recentes): mais recentes primeiro.
+    // Empty query: sort by newest.
     var entries = []
     for (var j = 0; j < displayModel.count; j++) {
       var row = displayModel.get(j)
@@ -317,7 +314,7 @@ Item {
     }
     onExited: function(exitCode) {
       if (procStat.gen !== root.searchGen) {
-        // Resultado de busca obsoleta; a atual ainda precisa das datas.
+        // Obsolete search result.
         if (!root.mtimesLoaded) root.fetchMtimes()
         return
       }
@@ -325,7 +322,7 @@ Item {
     }
   }
 
-  // ------------------------------------------------------------------ UI
+  // UI
 
   PanelWindow {
     id: panel
@@ -430,7 +427,6 @@ Item {
         anchors.leftMargin: card.contentLeftInset
         spacing: root.contentSpacing
 
-        // Campo de busca
         Rectangle {
           id: searchField
           width: parent.width
@@ -462,7 +458,6 @@ Item {
             elide: Text.ElideRight
           }
 
-          // Botão Expandir/Recolher na extremidade do campo de busca.
           Rectangle {
             id: expandButton
             anchors.right: parent.right
@@ -492,7 +487,6 @@ Item {
           }
         }
 
-        // Chips de filtro por tipo
         Flickable {
           id: chips
           visible: root.expanded
@@ -545,7 +539,6 @@ Item {
           }
         }
 
-        // Lista de resultados
         Item {
           visible: root.expanded
           width: parent.width
@@ -685,7 +678,6 @@ Item {
             }
           }
 
-          // Contagem no final da lista; só existe no estado expandido.
           Text {
             id: countLabel
             visible: text !== ""
@@ -703,7 +695,6 @@ Item {
           }
         }
 
-        // Dicas de teclado
         Text {
           id: footer
           visible: root.expanded

@@ -1,11 +1,6 @@
 #!/bin/bash
 
-# omarchy-find — abre/fecha o overlay de busca de arquivos
-# (plugin de shell jesseburlamaque.omarchy-find).
-#
-# Wrapper fino sobre a IPC padrão do omarchy-shell, no mesmo estilo do
-# omarchy-menu: o overlay vive dentro do processo do shell, este comando
-# apenas o invoca.
+# Toggle file search overlay. Thin wrapper over omarchy-shell IPC.
 
 set -euo pipefail
 
