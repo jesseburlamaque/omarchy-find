@@ -1,8 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=Find
-GenericName=Busca de arquivos
-Comment=Busca de arquivos estilo Spotlight com filtros por tipo
+GenericName=File Search
+GenericName[pt_BR]=Busca de arquivos
+Comment=Spotlight-style universal file search with type filters
+Comment[pt_BR]=Busca de arquivos estilo Spotlight com filtros por tipo
 Exec=omarchy-find toggle
 Icon=system-search
 Terminal=false

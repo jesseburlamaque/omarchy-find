@@ -717,8 +717,6 @@ Item {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
 
-
-
             delegate: Rectangle {
               id: rowRoot
               required property int index

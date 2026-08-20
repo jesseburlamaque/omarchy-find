@@ -13,7 +13,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "󰍉"
-    tooltipText: "Buscar arquivos"
+    tooltipText: "Search files"
     onPressed: function(b) {
       if (b === Qt.LeftButton && root.bar)
         root.bar.run("omarchy-shell shell toggle jesseburlamaque.omarchy-find '{}'")

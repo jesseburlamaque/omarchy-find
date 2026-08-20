@@ -21,20 +21,20 @@ case "$verb" in
     ;;
   -h | --help | help)
     cat <<USAGE
-Uso: omarchy-find [verbo] [payloadJson]
+Usage: omarchy-find [command] [payloadJson]
 
-Verbos:
-  toggle [payload]   Abre o find, ou fecha se já estiver aberto (padrão).
-  open|summon        Sempre abre. Payload opcional: '{"query":"termo"}'
-  close|hide         Fecha o overlay.
+Commands:
+  toggle [payload]   Open Find, or close if already open (default).
+  open|summon        Always open. Optional payload: '{"query":"term"}'
+  close|hide         Close the search overlay.
 
-Exemplos:
+Examples:
   omarchy-find
-  omarchy-find open '{"query":"notas"}'
+  omarchy-find open '{"query":"notes"}'
 USAGE
     ;;
   *)
-    echo "omarchy-find: verbo desconhecido '$verb'. Tente 'omarchy-find --help'." >&2
+    echo "omarchy-find: unknown command '$verb'. Try 'omarchy-find --help'." >&2
     exit 2
     ;;
 esac

@@ -4,7 +4,7 @@
   "name": "Omarchy Find",
   "version": "1.0.0",
   "author": "Jesse Burlamaque",
-  "description": "Busca de arquivos estilo Spotlight com filtros por tipo (fd + xdg-open)",
+  "description": "Spotlight-style universal file search with type filters (fd + xdg-open)",
   "kinds": [
     "overlay",
     "bar-widget"
@@ -16,7 +16,7 @@
   },
   "barWidget": {
     "displayName": "Omarchy Find",
-    "description": "Lupa na barra que abre a busca de arquivos",
+    "description": "Top bar magnifier widget that toggles file search",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"
