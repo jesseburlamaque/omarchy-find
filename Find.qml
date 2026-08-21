@@ -55,6 +55,11 @@ Item {
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int cardWidth: Math.min(Style.space(660), panel.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(520), panel.height - Style.gapsOut * 2)
+  property int rowHeight: Math.max(Style.space(44), Style.font.body + Style.space(20))
+  property string sortMode: "relevance"
+  property bool sortMenuOpen: false
+  property var rawItems: []
+  property var mtimesMap: ({})
   property int displayLimit: 60
   readonly property var displayLimitSteps: [15, 30, 60, 100, 200]
 
@@ -200,7 +205,10 @@ Item {
     // Search only when expanded and not in Google search mode.
     if (!root.expanded || root.isGoogleSearch) return
     root.searchGen++
-    root.cancelProcs()
+    if (procDirs.running || procFiles.running) {
+      root.rerunPending = true
+      return
+    }
     root.launchSearch()
   }
 
