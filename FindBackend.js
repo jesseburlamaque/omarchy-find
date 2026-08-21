@@ -182,7 +182,7 @@ function t(key, locale) {
 var FILTERS = [
   { id: "all",           label: "All",            dirs: true,  files: true,  exts: [],          recentDays: 0, hidden: true },
   { id: "folders",       label: "Folders",        dirs: true,  files: false, exts: [],          recentDays: 0, hidden: false },
-  { id: "systemFolders", label: "System Folders", dirs: true,  files: false, exts: [],          recentDays: 0, systemFolders: true },
+  { id: "systemFolders", label: "System Folders", dirs: true,  files: false, exts: [],          recentDays: 0, hidden: true, systemFolders: true },
   { id: "docs",          label: "Documents",      dirs: false, files: true,  exts: DOCS_EXTS,   recentDays: 0, hidden: false },
   { id: "images",        label: "Images",         dirs: false, files: true,  exts: IMAGES_EXTS, recentDays: 0, hidden: false },
   { id: "videos",        label: "Videos",         dirs: false, files: true,  exts: VIDEOS_EXTS, recentDays: 0, hidden: false },
@@ -272,7 +272,7 @@ function buildArgv(query, filterIndex, forDirs, home) {
   var argv = ["fd", "--color=never", "-i", "--no-ignore", "--follow", "--max-results", String(MAX_RESULTS)]
   argv.push("--type", forDirs ? "d" : "f")
 
-  if (filter.hidden !== false) {
+  if (filter.hidden === true) {
     argv.push("--hidden")
   }
 
@@ -287,7 +287,8 @@ function buildArgv(query, filterIndex, forDirs, home) {
     for (var e = 0; e < filter.exts.length; e++) argv.push("-e", filter.exts[e])
   }
   var days = filter.recentDays || 0
-  if (query.trim().length === 0 && days === 0) days = EMPTY_QUERY_DAYS
+  // When browsing without a query, apply the default time window only for the Recent filter.
+  if (query.trim().length === 0 && filter.id === "recent") days = EMPTY_QUERY_DAYS
   if (days > 0) argv.push("--changed-within", days + "d")
 
   argv.push("--full-path")

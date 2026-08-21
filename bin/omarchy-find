@@ -44,6 +44,10 @@ case "$verb" in
     install_cli_and_desktop
     KEYBIND="${payload:-ALT + SPACE}"
     [ "$KEYBIND" = "{}" ] && KEYBIND="ALT + SPACE"
+    if ! echo "$KEYBIND" | grep -qE '^[A-Za-z0-9 _+]+$'; then
+      echo "omarchy-find: keybind inválido '$KEYBIND'. Use formato como 'ALT + SPACE' ou 'SUPER + F'." >&2
+      exit 1
+    fi
     BINDINGS_DIR="$HOME/.config/hypr"
     BINDINGS_FILE="$BINDINGS_DIR/bindings.lua"
 

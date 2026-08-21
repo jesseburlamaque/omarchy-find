@@ -12,7 +12,6 @@ BarWidget {
 
   readonly property bool opened: overlayOpened
   property bool overlayOpened: false
-  property bool popoutSwitchClosing: false
 
   function open() {
     overlayOpened = true
@@ -39,12 +38,6 @@ BarWidget {
   function toggle() {
     if (overlayOpened) root.close()
     else root.open()
-  }
-
-  function closeForPopoutSwitch() {
-    popoutSwitchClosing = true
-    close()
-    Qt.callLater(function() { popoutSwitchClosing = false })
   }
 
   IpcHandler {
