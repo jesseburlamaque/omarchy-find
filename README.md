@@ -87,6 +87,7 @@ You can summon Omarchy Find in four convenient ways:
 | `Home / End` | Jump to first / last result |
 | `Tab` | Cycle through type filters |
 | `Ctrl+S` | Cycle through sort modes (Relevance, Recent, Oldest, A-Z, Z-A) |
+| `Ctrl+L` or click count | Cycle result display limit thresholds (15, 30, 60, 100, 200) |
 | `Enter` or click | Open selected file or folder with default application |
 | `Alt+Enter` | Open enclosing folder in default file manager |
 | `Ctrl+C` | Copy absolute file/folder path to clipboard (`wl-copy`) |

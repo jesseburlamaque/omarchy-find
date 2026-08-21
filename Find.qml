@@ -55,11 +55,16 @@ Item {
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int cardWidth: Math.min(Style.space(660), panel.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(520), panel.height - Style.gapsOut * 2)
-  property int rowHeight: Math.max(Style.space(44), Style.font.body + Style.space(20))
-  property string sortMode: "relevance"
-  property bool sortMenuOpen: false
-  property var rawItems: []
-  property var mtimesMap: ({})
+  property int displayLimit: 60
+  readonly property var displayLimitSteps: [15, 30, 60, 100, 200]
+
+  function cycleDisplayLimit() {
+    var steps = root.displayLimitSteps
+    var idx = steps.indexOf(root.displayLimit)
+    var nextIdx = (idx + 1) % steps.length
+    root.displayLimit = steps[nextIdx]
+    root.presentResults(root.rawItems)
+  }
 
   function pluginId() {
     return (root.manifest && root.manifest.id) || "jesseburlamaque.omarchy-find"
@@ -250,7 +255,7 @@ Item {
         it.mtimeMs = root.mtimesMap[it.path]
       }
     }
-    var ranked = Backend.rankResults(root.rawItems, root.filterText, Backend.DISPLAY_LIMIT, root.home, root.sortMode)
+    var ranked = Backend.rankResults(root.rawItems, root.filterText, root.displayLimit, root.home, root.sortMode)
     displayModel.clear()
     var now = Date.now()
     for (var i = 0; i < ranked.length; i++) {
@@ -302,7 +307,7 @@ Item {
         it.mtimeMs = map[it.path]
       }
     }
-    var ranked = Backend.rankResults(root.rawItems, root.filterText, Backend.DISPLAY_LIMIT, root.home, root.sortMode)
+    var ranked = Backend.rankResults(root.rawItems, root.filterText, root.displayLimit, root.home, root.sortMode)
     displayModel.clear()
     for (var i = 0; i < ranked.length; i++) {
       var ms = ranked[i].mtimeMs
@@ -493,6 +498,9 @@ Item {
             event.accepted = true
           } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_S) {
             root.cycleSortMode()
+            event.accepted = true
+          } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_L) {
+            root.cycleDisplayLimit()
             event.accepted = true
           } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
             if (root.switchPanel(-1)) {
@@ -884,12 +892,21 @@ Item {
           text: root.searching
             ? Backend.t("searching", root.locale)
             : (displayModel.count > 0
-               ? displayModel.count + Backend.t(displayModel.count === 1 ? "result" : "results", root.locale)
+               ? displayModel.count + Backend.t(displayModel.count === 1 ? "result" : "results", root.locale) + " · " + Backend.t("maxLimit", root.locale) + ": " + root.displayLimit + " 󰅀"
                : "")
-          color: root.accent
-          opacity: 0.85
+          color: countMouse.containsMouse ? root.foreground : root.accent
+          opacity: countMouse.containsMouse ? 1.0 : 0.85
           font.family: root.fontFamily
           font.pixelSize: Math.max(10, Style.font.body - 1)
+
+          MouseArea {
+            id: countMouse
+            anchors.fill: parent
+            anchors.margins: -4
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.cycleDisplayLimit()
+          }
         }
 
         Text {
