@@ -605,6 +605,7 @@ Item {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             text: "󰍉"
+            textFormat: Text.PlainText
             color: root.accent
             font.family: root.fontFamily
             font.pixelSize: Style.font.heading
@@ -617,6 +618,7 @@ Item {
             anchors.rightMargin: Style.spacing.sm
             anchors.verticalCenter: parent.verticalCenter
             text: root.filterText || Backend.t("searchPlaceholder", root.locale)
+            textFormat: Text.PlainText
             color: root.foreground
             opacity: root.filterText ? 1 : 0.58
             font.family: root.fontFamily
@@ -638,6 +640,7 @@ Item {
               id: expandLabel
               anchors.centerIn: parent
               text: Backend.t(root.expanded ? "collapse" : "expand", root.locale)
+              textFormat: Text.PlainText
               color: root.expanded ? root.foreground : root.accent
               opacity: root.expanded ? 0.8 : 1
               font.family: root.fontFamily
@@ -688,6 +691,7 @@ Item {
                   id: chipLabel
                   anchors.centerIn: parent
                   text: Backend.t(chip.modelData.id, root.locale)
+                  textFormat: Text.PlainText
                   color: chip.activeChip ? root.accent : root.foreground
                   opacity: chip.activeChip ? 1 : 0.8
                   font.family: root.fontFamily
@@ -727,6 +731,7 @@ Item {
                 visible: sortItem.index > 0
                 anchors.verticalCenter: parent.verticalCenter
                 text: "·"
+                textFormat: Text.PlainText
                 color: root.foreground
                 opacity: 0.35
                 font.family: root.fontFamily
@@ -737,6 +742,7 @@ Item {
                 id: sortLabel
                 anchors.verticalCenter: parent.verticalCenter
                 text: Backend.t(sortItem.modelData.labelKey, root.locale)
+                textFormat: Text.PlainText
                 color: sortItem.isSelected ? root.accent : root.foreground
                 opacity: sortItem.isSelected ? 1 : (sortMouse.containsMouse ? 0.9 : 0.45)
                 font.family: root.fontFamily
@@ -804,6 +810,7 @@ Item {
                 width: Style.space(24)
                 horizontalAlignment: Text.AlignHCenter
                 text: rowRoot.icon
+                textFormat: Text.PlainText
                 color: rowRoot.hasCursor ? root.selectedText : root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
@@ -819,6 +826,7 @@ Item {
                 Text {
                   width: parent.width
                   text: rowRoot.name
+                  textFormat: Text.PlainText
                   color: rowRoot.hasCursor ? root.selectedText : root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
@@ -828,6 +836,7 @@ Item {
                 Text {
                   width: parent.width
                   text: rowRoot.dir
+                  textFormat: Text.PlainText
                   color: rowRoot.hasCursor ? root.selectedText : root.foreground
                   opacity: rowRoot.hasCursor ? 0.75 : 0.5
                   font.family: root.fontFamily
@@ -842,6 +851,7 @@ Item {
                 anchors.rightMargin: Style.spacing.sm
                 anchors.verticalCenter: parent.verticalCenter
                 text: rowRoot.mtime
+                textFormat: Text.PlainText
                 color: rowRoot.hasCursor ? root.selectedText : root.foreground
                 opacity: rowRoot.hasCursor ? 0.75 : 0.5
                 font.family: root.fontFamily
@@ -868,6 +878,7 @@ Item {
 
             Text {
               text: "󰈉"
+              textFormat: Text.PlainText
               color: root.selectedText
               opacity: 0.8
               font.family: root.fontFamily
@@ -882,6 +893,7 @@ Item {
                 : (root.filterText
                    ? Backend.t("noResults", root.locale) + root.filterText + "\""
                    : Backend.t("noRecent", root.locale))
+              textFormat: Text.PlainText
               color: root.foreground
               opacity: 0.7
               font.family: root.fontFamily
@@ -902,6 +914,7 @@ Item {
             : (displayModel.count > 0
                ? displayModel.count + Backend.t(displayModel.count === 1 ? "result" : "results", root.locale) + " · " + Backend.t("maxLimit", root.locale) + ": " + root.displayLimit + " 󰅀"
                : "")
+          textFormat: Text.PlainText
           color: countMouse.containsMouse ? root.foreground : root.accent
           opacity: countMouse.containsMouse ? 1.0 : 0.85
           font.family: root.fontFamily
@@ -925,6 +938,7 @@ Item {
           text: root.isGoogleSearch
             ? Backend.t("googleFooter", root.locale)
             : Backend.t("footer", root.locale)
+          textFormat: Text.PlainText
           color: root.foreground
           opacity: 0.45
           font.family: root.fontFamily
