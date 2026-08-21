@@ -229,41 +229,20 @@ function accentRegex(term) {
   return s
 }
 
-function permutations(arr) {
-  if (arr.length <= 1) return [arr]
-  var result = []
-  for (var i = 0; i < arr.length; i++) {
-    var current = arr[i]
-    var remaining = arr.slice(0, i).concat(arr.slice(i + 1))
-    var perms = permutations(remaining)
-    for (var j = 0; j < perms.length; j++) {
-      result.push([current].concat(perms[j]))
-    }
-  }
-  return result
-}
-
-function buildQueryPattern(query) {
-  var rawTerms = query.trim().split(/\s+/)
+function extractTerms(query) {
+  var rawTerms = String(query || "").trim().split(/\s+/)
   var terms = []
-  for (var t = 0; t < rawTerms.length; t++) {
-    if (rawTerms[t].length > 0) {
-      terms.push(accentRegex(rawTerms[t]))
+  var seen = {}
+  for (var i = 0; i < rawTerms.length; i++) {
+    var term = rawTerms[i]
+    if (!term) continue
+    var lower = term.toLowerCase()
+    if (!seen[lower]) {
+      seen[lower] = true
+      terms.push(accentRegex(term))
     }
   }
-  if (terms.length === 0) return "."
-  if (terms.length === 1) return terms[0]
-
-  if (terms.length <= 3) {
-    var perms = permutations(terms)
-    var parts = []
-    for (var p = 0; p < perms.length; p++) {
-      parts.push(perms[p].join(".*"))
-    }
-    return "(" + parts.join("|") + ")"
-  }
-
-  return terms.join(".*")
+  return terms
 }
 
 // Builds fd arguments. Empty query lists recent items.
@@ -291,11 +270,17 @@ function buildArgv(query, filterIndex, forDirs, home) {
   if (query.trim().length === 0 && filter.id === "recent") days = EMPTY_QUERY_DAYS
   if (days > 0) argv.push("--changed-within", days + "d")
 
+  var terms = extractTerms(query)
+  if (terms.length > 1) {
+    for (var t = 1; t < terms.length; t++) {
+      argv.push("--and", terms[t])
+    }
+  }
+
   argv.push("--full-path")
   argv.push("--")
 
-  var q = query.trim()
-  var pattern = q.length === 0 ? "." : buildQueryPattern(q)
+  var pattern = terms.length === 0 ? "." : terms[0]
   argv.push(pattern)
 
   if (filter.systemFolders) {
