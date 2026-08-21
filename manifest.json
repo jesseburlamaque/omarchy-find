@@ -4,7 +4,7 @@
   "name": "Omarchy Find",
   "version": "1.0.0",
   "author": "Jesse Burlamaque",
-  "description": "Spotlight-style universal file search with type filters (fd + xdg-open)",
+  "description": "A fast, elegant, keyboard-driven universal file search and quick launcher for the Omarchy shell on Linux.",
   "kinds": [
     "overlay",
     "bar-widget"
