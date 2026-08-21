@@ -59,7 +59,11 @@ omarchy restart shell
 You can summon Omarchy Find in four convenient ways:
 
 1. **Global Keyboard Shortcut (`Alt + Space`)** *(Recommended)*:
-   Add the following line to `~/.config/hypr/bindings.lua` to open Find from anywhere:
+   Configure the global shortcut automatically with one command:
+   ```sh
+   omarchy-find setup-keybind
+   ```
+   *Or manually add this line to `~/.config/hypr/bindings.lua`:*
    ```lua
    o.bind("ALT + SPACE", "Find files & folders", "omarchy-find")
    ```
@@ -68,6 +72,7 @@ You can summon Omarchy Find in four convenient ways:
 4. **CLI / Terminal**:
    - `omarchy-find` — Toggle the search overlay.
    - `omarchy-find open '{"query":"notes"}'` — Open with a pre-filled query.
+   - `omarchy-find setup-keybind` — Configure the global `Alt+Space` shortcut.
 
 ### In-App Keyboard Shortcuts
 

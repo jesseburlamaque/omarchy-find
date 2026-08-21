@@ -19,18 +19,48 @@ case "$verb" in
   close | hide)
     exec omarchy-shell shell hide "$PLUGIN_ID"
     ;;
+  setup-keybind | install-keybind)
+    KEYBIND="${payload:-ALT + SPACE}"
+    [ "$KEYBIND" = "{}" ] && KEYBIND="ALT + SPACE"
+    BINDINGS_FILE="$HOME/.config/hypr/bindings.lua"
+
+    if [ ! -f "$BINDINGS_FILE" ]; then
+      echo "Error: $BINDINGS_FILE not found." >&2
+      exit 1
+    fi
+
+    if grep -q "omarchy-find" "$BINDINGS_FILE"; then
+      echo "Omarchy Find keybinding is already configured in $BINDINGS_FILE:"
+      grep "omarchy-find" "$BINDINGS_FILE"
+      exit 0
+    fi
+
+    cat <<EOF >> "$BINDINGS_FILE"
+
+-- Omarchy Find file search overlay
+o.bind("$KEYBIND", "Find files & folders", "omarchy-find")
+EOF
+
+    echo "✓ Keybinding '$KEYBIND' successfully added to $BINDINGS_FILE"
+    if command -v hyprctl >/dev/null 2>&1; then
+      hyprctl reload >/dev/null 2>&1 || true
+      echo "✓ Hyprland configuration reloaded."
+    fi
+    ;;
   -h | --help | help)
     cat <<USAGE
 Usage: omarchy-find [command] [payloadJson]
 
 Commands:
-  toggle [payload]   Open Find, or close if already open (default).
-  open|summon        Always open. Optional payload: '{"query":"term"}'
-  close|hide         Close the search overlay.
+  toggle [payload]     Open Find, or close if already open (default).
+  open|summon          Always open. Optional payload: '{"query":"term"}'
+  close|hide           Close the search overlay.
+  setup-keybind        Configure global Alt+Space shortcut in Hyprland.
 
 Examples:
   omarchy-find
   omarchy-find open '{"query":"notes"}'
+  omarchy-find setup-keybind
 USAGE
     ;;
   *)
