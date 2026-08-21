@@ -294,22 +294,16 @@ function buildArgv(query, filterIndex, forDirs, home) {
   argv.push("--")
 
   var q = query.trim()
-  if (q.length === 0) {
-    if (filter.systemFolders) {
-      argv.push("/\\.config(/|$)")
-    } else {
-      argv.push(".")
-    }
+  var pattern = q.length === 0 ? "." : buildQueryPattern(q)
+  argv.push(pattern)
+
+  if (filter.systemFolders) {
+    argv.push(home + "/.config")
+    argv.push(home + "/.local/share")
   } else {
-    var pattern = buildQueryPattern(q)
-    if (filter.systemFolders) {
-      argv.push("/\\.config.*" + pattern)
-    } else {
-      argv.push(pattern)
-    }
+    argv.push(home)
   }
 
-  argv.push(home)
   return argv
 }
 
