@@ -42,8 +42,6 @@ Beyond simple file launching, it acts as a central productivity hub:
 
 ## Install
 
-### Method 1: Via Omarchy Plugin Manager (Recommended)
-
 ```sh
 omarchy plugin add https://github.com/jesseburlamaque/omarchy-find.git --enable
 omarchy restart shell
@@ -54,14 +52,6 @@ omarchy restart shell
 > ~/.config/omarchy/plugins/jesseburlamaque.omarchy-find/bin/omarchy-find setup-keybind
 > ```
 > *(Or pass a custom shortcut, e.g. `.../omarchy-find setup-keybind "SUPER + F"`)*
-
-### Method 2: Via Git Clone & Install Script
-
-```sh
-git clone https://github.com/jesseburlamaque/omarchy-find.git
-cd omarchy-find
-./install.sh
-```
 
 ---
 
@@ -140,10 +130,18 @@ omarchy restart shell
 
 ## Uninstall
 
+1. Remove the plugin from Omarchy shell:
 ```sh
 omarchy plugin remove jesseburlamaque.omarchy-find
 omarchy restart shell
 ```
+
+2. (Optional) If you configured the global shortcut and CLI, remove them:
+```sh
+omarchy-find remove-keybind
+rm -f ~/.local/bin/omarchy-find ~/.local/share/applications/omarchy-find.desktop
+```
+*(Or manually delete the `omarchy-find` line from `~/.config/hypr/bindings.lua`)*
 
 ---
 
