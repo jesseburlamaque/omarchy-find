@@ -180,15 +180,14 @@ function t(key, locale) {
 }
 
 var FILTERS = [
-  { id: "all",           label: "All",            dirs: true,  files: true,  exts: [],          recentDays: 0, hidden: true },
-  { id: "folders",       label: "Folders",        dirs: true,  files: false, exts: [],          recentDays: 0, hidden: false },
-  { id: "systemFolders", label: "System Folders", dirs: true,  files: false, exts: [],          recentDays: 0, hidden: true, systemFolders: true },
-  { id: "docs",          label: "Documents",      dirs: false, files: true,  exts: DOCS_EXTS,   recentDays: 0, hidden: false },
-  { id: "images",        label: "Images",         dirs: false, files: true,  exts: IMAGES_EXTS, recentDays: 0, hidden: false },
-  { id: "videos",        label: "Videos",         dirs: false, files: true,  exts: VIDEOS_EXTS, recentDays: 0, hidden: false },
-  { id: "audio",         label: "Audio",          dirs: false, files: true,  exts: AUDIO_EXTS,  recentDays: 0, hidden: false },
-  { id: "code",          label: "Code",           dirs: false, files: true,  exts: CODE_EXTS,   recentDays: 0, hidden: false },
-  { id: "recent",        label: "Recent",         dirs: true,  files: true,  exts: [],          recentDays: 14, hidden: true }
+  { id: "all",           label: "All",            dirs: true,  files: true,  exts: [],          hidden: true },
+  { id: "folders",       label: "Folders",        dirs: true,  files: false, exts: [],          hidden: false },
+  { id: "systemFolders", label: "System Folders", dirs: true,  files: false, exts: [],          hidden: true, systemFolders: true },
+  { id: "docs",          label: "Documents",      dirs: false, files: true,  exts: DOCS_EXTS,   hidden: false },
+  { id: "images",        label: "Images",         dirs: false, files: true,  exts: IMAGES_EXTS, hidden: false },
+  { id: "videos",        label: "Videos",         dirs: false, files: true,  exts: VIDEOS_EXTS, hidden: false },
+  { id: "audio",         label: "Audio",          dirs: false, files: true,  exts: AUDIO_EXTS,  hidden: false },
+  { id: "code",          label: "Code",           dirs: false, files: true,  exts: CODE_EXTS,   hidden: false }
 ]
 
 function isSubsequence(needle, haystack) {
@@ -265,10 +264,6 @@ function buildArgv(query, filterIndex, forDirs, home) {
   if (!forDirs) {
     for (var e = 0; e < filter.exts.length; e++) argv.push("-e", filter.exts[e])
   }
-  var days = filter.recentDays || 0
-  // When browsing without a query, apply the default time window only for the Recent filter.
-  if (query.trim().length === 0 && filter.id === "recent") days = EMPTY_QUERY_DAYS
-  if (days > 0) argv.push("--changed-within", days + "d")
 
   var terms = extractTerms(query)
   if (terms.length > 1) {

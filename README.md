@@ -38,7 +38,6 @@ Beyond simple file launching, it acts as a central productivity hub:
   - **Documents:** PDFs, Markdown, Word, eBooks, spreadsheets, and text files.
   - **Images, Videos & Audio:** Quick discovery for multimedia assets.
   - **Code:** Source files and scripts across all major programming languages.
-  - **Recent:** Recently modified files and folders (last 30 days) shown most-recent first.
 - **Instant Sorting Modes:** Switch on the fly between **Relevance**, **Most Recent**, **Oldest**, **Name (A → Z)**, and **Name (Z → A)** via single click or `Ctrl+S`.
 - **Quick Web Search:** Type `go <query>` to hide local file lists and open Google search directly in your browser.
 - **Ergonomic Keyboard Navigation:** Full support for arrow keys, readline navigation (`Ctrl+N`/`Ctrl+P`), vim-style shortcuts (`Ctrl+J`/`Ctrl+K`), `Home`/`End`, and `PageUp`/`PageDown`.
