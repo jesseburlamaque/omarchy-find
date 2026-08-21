@@ -2,7 +2,7 @@
 
 // Backend: configures filters, builds fd command, and ranks results.
 
-var MAX_RESULTS = 250
+var MAX_RESULTS = 500
 var DISPLAY_LIMIT = 60
 var EMPTY_QUERY_DAYS = 30
 
@@ -53,19 +53,20 @@ var SYSTEM_EXCLUDES = [
 ]
 
 var DOCS_EXTS = ["pdf", "doc", "docx", "odt", "ott", "rtf", "txt", "md", "markdown",
-  "xls", "xlsx", "ods", "csv", "tsv", "ppt", "pptx", "odp", "epub"]
+  "xls", "xlsx", "ods", "csv", "tsv", "ppt", "pptx", "odp", "epub", "gdlink", "gdoc",
+  "gsheet", "gslides", "numbers", "pages", "key", "org", "rst", "tex", "djvu", "mobi", "azw3"]
 var IMAGES_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico",
-  "tif", "tiff", "heic", "heif", "avif", "raw", "cr2", "nef"]
+  "tif", "tiff", "heic", "heif", "avif", "raw", "cr2", "nef", "jxl", "psd", "ai", "kra", "xcf"]
 var VIDEOS_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "mpg", "mpeg",
   "wmv", "flv", "ts", "m2ts", "3gp"]
 var AUDIO_EXTS = ["mp3", "flac", "ogg", "oga", "opus", "wav", "m4a", "aac",
   "wma", "aiff", "aif", "mid", "midi"]
 var CODE_EXTS = ["c", "h", "cpp", "cxx", "cc", "hpp", "hh", "rs", "go", "py", "pyw",
-  "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "jsonc", "yaml", "yml", "toml",
+  "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "jsonc", "json5", "yaml", "yml", "toml",
   "lua", "sh", "bash", "zsh", "fish", "css", "scss", "sass", "less", "html", "htm",
   "xml", "java", "kt", "kts", "rb", "php", "pl", "pm", "sql", "qml", "vue", "svelte",
   "zig", "cs", "swift", "dart", "ex", "exs", "hs", "ml", "r", "jl", "nim", "v",
-  "cmake", "mk", "ini", "conf", "cfg"]
+  "cmake", "mk", "ini", "conf", "cfg", "env", "proto", "graphql", "dockerfile", "justfile", "makefile"]
 
 // Locale translations with English fallback.
 var LOCALES = {
@@ -177,12 +178,12 @@ function stripAccents(str) {
 }
 
 var ACCENT_MAP = {
-  "a": "[aáàãâäAÁÀÃÂÄ]",
-  "e": "[eéèêëEÉÈÊË]",
-  "i": "[iíìîïIÍÌÎÏ]",
-  "o": "[oóòõôöOÓÒÕÔÖ]",
-  "u": "[uúùûüUÚÙÛÜ]",
-  "c": "[cçCÇ]"
+  "a": "[aáàãâä]",
+  "e": "[eéèêë]",
+  "i": "[iíìîï]",
+  "o": "[oóòõôö]",
+  "u": "[uúùûü]",
+  "c": "[cç]"
 }
 
 function accentRegex(term) {
@@ -241,7 +242,7 @@ function buildQueryPattern(query) {
 // Builds fd arguments. Empty query lists recent items.
 function buildArgv(query, filterIndex, forDirs, home) {
   var filter = FILTERS[filterIndex] || FILTERS[0]
-  var argv = ["fd", "--color=never", "--max-results", String(MAX_RESULTS)]
+  var argv = ["fd", "--color=never", "-i", "--no-ignore", "--follow", "--max-results", String(MAX_RESULTS)]
   argv.push("--type", forDirs ? "d" : "f")
 
   if (filter.hidden !== false) {
@@ -411,7 +412,7 @@ function scoreItem(item, query) {
     if (!term) continue
     var s = scoreTerm(name, term)
     if (s < 0) {
-      if (path.indexOf("/" + term) !== -1 || path.indexOf("/." + term) !== -1) s = 4
+      if (path.indexOf("/" + term) !== -1 || path.indexOf("/." + term) !== -1 || path.indexOf(" " + term) !== -1 || path.indexOf("_" + term) !== -1 || path.indexOf("-" + term) !== -1) s = 4
       else if (path.indexOf(term) !== -1) s = 5
       else return -1
     }
