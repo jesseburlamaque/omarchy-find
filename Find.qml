@@ -79,7 +79,18 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
+  function cancelProcs() {
+    debounce.stop()
+    if (procDirs.running) procDirs.running = false
+    if (procFiles.running) procFiles.running = false
+    if (procStat.running) procStat.running = false
+    root.pendingProcs = 0
+    root.rerunPending = false
+    root.searching = false
+  }
+
   function close() {
+    root.cancelProcs()
     root.opened = false
   }
 
@@ -102,6 +113,7 @@ Item {
   }
 
   function dismiss() {
+    root.cancelProcs()
     root.opened = false
     if (root.shell && typeof root.shell.hide === "function")
       root.shell.hide(root.pluginId())
@@ -130,13 +142,7 @@ Item {
     else if (!root.manualExpand) root.expanded = false
 
     if (root.isGoogleSearch) {
-      debounce.stop()
-      if (procDirs.running) procDirs.running = false
-      if (procFiles.running) procFiles.running = false
-      if (procStat.running) procStat.running = false
-      root.searching = false
-      root.pendingProcs = 0
-      root.rerunPending = false
+      root.cancelProcs()
       displayModel.clear()
       var terms = root.googleSearchTerms
       if (terms.length > 0) {
@@ -189,10 +195,7 @@ Item {
     // Search only when expanded and not in Google search mode.
     if (!root.expanded || root.isGoogleSearch) return
     root.searchGen++
-    if (procDirs.running || procFiles.running) {
-      root.rerunPending = true
-      return
-    }
+    root.cancelProcs()
     root.launchSearch()
   }
 
