@@ -1,6 +1,6 @@
 # Omarchy Find
 
-A fast, elegant, keyboard-driven universal file search and quick launcher for the [Omarchy](https://github.com/omarchy/omarchy) shell on Linux.
+A fast, elegant, keyboard-driven universal file search and quick launcher for the [Omarchy](https://github.com/basecamp/omarchy) shell on Linux.
 
 ![Omarchy Find](preview.png)
 
