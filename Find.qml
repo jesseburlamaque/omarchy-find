@@ -250,14 +250,15 @@ Item {
     root.fetchMtimes()
   }
 
-  // Batch stat for mtimes.
+  // Batch stat for mtimes across raw candidate items.
   function fetchMtimes() {
-    if (displayModel.count === 0 || procStat.running) return
+    if (root.rawItems.length === 0 || procStat.running) return
     var argv = ["stat", "-c", "%Y\t%n", "--"]
     var hasPaths = false
-    for (var i = 0; i < displayModel.count; i++) {
-      var path = displayModel.get(i).path
-      if (path.indexOf("http://") !== 0 && path.indexOf("https://") !== 0) {
+    var limit = Math.min(root.rawItems.length, 300)
+    for (var i = 0; i < limit; i++) {
+      var path = root.rawItems[i].path
+      if (path && path.indexOf("http://") !== 0 && path.indexOf("https://") !== 0) {
         argv.push(path)
         hasPaths = true
       }

@@ -478,8 +478,7 @@ function rankResults(items, query, limit, home, sortMode) {
         if (aSys !== bSys) return aSys ? 1 : -1
         return (a.mtimeMs || 0) - (b.mtimeMs || 0)
       })
-    } else {
-      // "relevance" or "mtime_desc"
+    } else if (mode === "mtime_desc") {
       copy.sort(function(a, b) {
         var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
         var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
@@ -487,6 +486,18 @@ function rankResults(items, query, limit, home, sortMode) {
         if (a.mtimeMs && b.mtimeMs && a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
         return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0)
+      })
+    } else {
+      // "relevance" (Default empty query: user primary dirs first, then top-level items)
+      copy.sort(function(a, b) {
+        var aSys = a.isSystem !== undefined ? a.isSystem : isSystemPath(a.path, home)
+        var bSys = b.isSystem !== undefined ? b.isSystem : isSystemPath(b.path, home)
+        if (aSys !== bSys) return aSys ? 1 : -1
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+        var aDepth = a.path.split("/").length
+        var bDepth = b.path.split("/").length
+        if (aDepth !== bDepth) return aDepth - bDepth
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
       })
     }
     return copy.slice(0, limit)
@@ -518,14 +529,17 @@ function rankResults(items, query, limit, home, sortMode) {
   } else if (mode === "mtime_desc") {
     scored.sort(function(a, b) {
       if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
-      return (b.item.mtimeMs || 0) - (a.item.mtimeMs || 0)
+      if ((b.item.mtimeMs || 0) !== (a.item.mtimeMs || 0)) {
+        return (b.item.mtimeMs || 0) - (a.item.mtimeMs || 0)
+      }
+      return a.score - b.score
     })
   } else {
     // "relevance"
     scored.sort(function(a, b) {
-      // 1. Better query relevance score comes first! (Exact match beats fuzzy)
+      // 1. Better query relevance score comes first! (Exact match beats prefix beats substring)
       if (a.score !== b.score) return a.score - b.score
-      // 2. For items with equal score, prefer user files/folders over system/hidden files
+      // 2. Prefer user files/folders over system/hidden files
       if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1
       // 3. Directories before files
       if (a.item.isDir !== b.item.isDir) return a.item.isDir ? -1 : 1
