@@ -42,14 +42,25 @@ Beyond simple file launching, it acts as a central productivity hub:
 
 ## Install
 
+### Method 1: Via Omarchy Plugin Manager (Recommended)
+
 ```sh
 omarchy plugin add https://github.com/jesseburlamaque/omarchy-find.git --enable
+omarchy restart shell
 ```
 
-Then restart the shell:
+> **Optional (Global Shortcut & CLI):** To assign the global shortcut (`Alt + Space`) and enable the `omarchy-find` CLI command in your terminal, run:
+> ```sh
+> ~/.config/omarchy/plugins/jesseburlamaque.omarchy-find/bin/omarchy-find setup-keybind
+> ```
+> *(Or pass a custom shortcut, e.g. `.../omarchy-find setup-keybind "SUPER + F"`)*
+
+### Method 2: Via Git Clone & Install Script
 
 ```sh
-omarchy restart shell
+git clone https://github.com/jesseburlamaque/omarchy-find.git
+cd omarchy-find
+./install.sh
 ```
 
 ---
@@ -58,21 +69,22 @@ omarchy restart shell
 
 You can summon Omarchy Find in four convenient ways:
 
-1. **Global Keyboard Shortcut (`Alt + Space`)** *(Recommended)*:
-   Configure the global shortcut automatically with one command:
+1. **Status Bar Widget**: Click the magnifier icon (`󰍉`) on the Omarchy top bar.
+2. **Application Launcher**: Open the Omarchy app launcher and click **Find**.
+3. **Global Keyboard Shortcut (`Alt + Space`)**:
+   Configure it automatically:
    ```sh
    omarchy-find setup-keybind
    ```
    *Or manually add this line to `~/.config/hypr/bindings.lua`:*
    ```lua
-   o.bind("ALT + SPACE", "Find files & folders", "omarchy-find")
+   o.bind("ALT + SPACE", "Find files & folders", "omarchy-shell shell toggle jesseburlamaque.omarchy-find")
    ```
-2. **Status Bar Widget**: Click the magnifier icon (`󰍉`) on the Omarchy top bar.
-3. **Application Launcher**: Open the Omarchy app launcher and click **Find**.
 4. **CLI / Terminal**:
    - `omarchy-find` — Toggle the search overlay.
    - `omarchy-find open '{"query":"notes"}'` — Open with a pre-filled query.
-   - `omarchy-find setup-keybind` — Configure the global `Alt+Space` shortcut.
+   - `omarchy-find setup-keybind [shortcut]` — Configure global shortcut (default: `ALT + SPACE`).
+   - `omarchy-find remove-keybind` — Remove shortcut from Hyprland.
 
 ### In-App Keyboard Shortcuts
 
