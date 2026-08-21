@@ -83,6 +83,24 @@ Item {
     root.opened = false
   }
 
+  function switchPanel(direction) {
+    if (root.shell && root.shell.bars) {
+      for (var i = 0; i < root.shell.bars.length; i++) {
+        var b = root.shell.bars[i]
+        if (b && typeof b.switchPanelFrom === "function" && typeof b.moduleWidgets === "function") {
+          var widgets = b.moduleWidgets(root.pluginId())
+          if (widgets && widgets.length > 0) {
+            if (b.switchPanelFrom(widgets[0], direction)) {
+              root.dismiss()
+              return true
+            }
+          }
+        }
+      }
+    }
+    return false
+  }
+
   function dismiss() {
     root.opened = false
     if (root.shell && typeof root.shell.hide === "function")
@@ -473,14 +491,29 @@ Item {
           } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_S) {
             root.cycleSortMode()
             event.accepted = true
+          } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+            if (root.switchPanel(-1)) {
+              event.accepted = true
+            } else if (root.expanded) {
+              root.cycleFilter(-1)
+              event.accepted = true
+            } else {
+              event.accepted = true
+            }
           } else if (event.key === Qt.Key_Tab) {
             if (root.isGoogleSearch) {
               event.accepted = true
-            } else if (root.expanded) {
+            } else if (root.expanded && root.filterText.trim() !== "") {
               root.cycleFilter(1)
               event.accepted = true
+            } else if (!root.switchPanel(1)) {
+              if (root.expanded) {
+                root.cycleFilter(1)
+              } else {
+                root.expandForBrowse()
+              }
+              event.accepted = true
             } else {
-              root.expandForBrowse()
               event.accepted = true
             }
           } else if (Util.editsFilter(event, root.filterText)) {
