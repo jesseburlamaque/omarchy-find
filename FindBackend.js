@@ -52,21 +52,48 @@ var SYSTEM_EXCLUDES = [
   ".*.bak.*"
 ]
 
-var DOCS_EXTS = ["pdf", "doc", "docx", "odt", "ott", "rtf", "txt", "md", "markdown",
-  "xls", "xlsx", "ods", "csv", "tsv", "ppt", "pptx", "odp", "epub", "gdlink", "gdoc",
-  "gsheet", "gslides", "numbers", "pages", "key", "org", "rst", "tex", "djvu", "mobi", "azw3"]
-var IMAGES_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico",
-  "tif", "tiff", "heic", "heif", "avif", "raw", "cr2", "nef", "jxl", "psd", "ai", "kra", "xcf"]
-var VIDEOS_EXTS = ["mp4", "mkv", "webm", "avi", "mov", "m4v", "mpg", "mpeg",
-  "wmv", "flv", "ts", "m2ts", "3gp"]
-var AUDIO_EXTS = ["mp3", "flac", "ogg", "oga", "opus", "wav", "m4a", "aac",
-  "wma", "aiff", "aif", "mid", "midi"]
-var CODE_EXTS = ["c", "h", "cpp", "cxx", "cc", "hpp", "hh", "rs", "go", "py", "pyw",
-  "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "jsonc", "json5", "yaml", "yml", "toml",
-  "lua", "sh", "bash", "zsh", "fish", "css", "scss", "sass", "less", "html", "htm",
-  "xml", "java", "kt", "kts", "rb", "php", "pl", "pm", "sql", "qml", "vue", "svelte",
-  "zig", "cs", "swift", "dart", "ex", "exs", "hs", "ml", "r", "jl", "nim", "v",
-  "cmake", "mk", "ini", "conf", "cfg", "env", "proto", "graphql", "dockerfile", "justfile", "makefile"]
+var DOCS_EXTS = [
+  "pdf", "epub", "mobi", "azw", "azw3", "djvu", "cbr", "cbz", "fb2",
+  "doc", "docx", "docm", "dot", "dotx", "odt", "ott", "rtf", "txt", "text", "wps", "pages", "gdlink", "gdoc",
+  "xls", "xlsx", "xlsm", "xltx", "ods", "ots", "csv", "tsv", "numbers", "gsheet", "parquet", "feather", "tab",
+  "ppt", "pptx", "pptm", "potx", "odp", "otp", "key", "keynote", "gslides",
+  "md", "markdown", "mdown", "org", "rst", "adoc", "asciidoc", "tex", "latex", "typst", "typ", "bib", "nfo", "log"
+]
+
+var IMAGES_EXTS = [
+  "jpg", "jpeg", "png", "gif", "webp", "svg", "svgz", "bmp", "ico", "cur", "tif", "tiff", "heic", "heif", "avif", "jxl",
+  "raw", "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "dng", "orf", "rw2", "pef", "raf", "kdc",
+  "psd", "psb", "ai", "eps", "kra", "xcf", "clip", "ase", "aseprite", "fig", "sketch", "tga", "dds", "hdr", "exr", "icns"
+]
+
+var VIDEOS_EXTS = [
+  "mp4", "mkv", "webm", "avi", "mov", "m4v", "mpg", "mpeg", "wmv", "flv", "ts", "m2ts", "mts",
+  "3gp", "3g2", "ogv", "vob", "divx", "rm", "rmvb", "f4v", "asf"
+]
+
+var AUDIO_EXTS = [
+  "mp3", "flac", "ogg", "oga", "opus", "wav", "wave", "m4a", "aac", "wma", "aiff", "aif", "alac",
+  "mid", "midi", "ape", "ac3", "dts", "mp2", "mka", "ra", "voc", "amr"
+]
+
+var CODE_EXTS = [
+  "c", "h", "cpp", "cxx", "cc", "hpp", "hh", "hxx", "rs", "go", "zig", "d", "nim", "v", "odin", "f", "f90", "for", "asm", "s",
+  "java", "kt", "kts", "scala", "groovy", "gradle", "swift", "m", "mm", "dart", "cs", "fs", "fsx",
+  "py", "pyw", "pyx", "ipynb", "rb", "erb", "rake", "php", "phtml", "pl", "pm", "t", "lua", "r", "jl", "sh", "bash", "zsh", "fish", "ksh", "bat", "cmd", "ps1",
+  "js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx", "html", "htm", "xhtml", "css", "scss", "sass", "less", "styl", "vue", "svelte", "astro", "qml",
+  "hs", "lhs", "ml", "mli", "ex", "exs", "erl", "hrl", "clj", "cljs", "cljc", "edn", "lisp", "lsp", "scm", "ss", "rkt", "elm", "purs",
+  "json", "jsonc", "json5", "yaml", "yml", "toml", "xml", "ini", "cfg", "conf", "cnf", "env", "sql", "sqlite", "graphql", "gql", "proto", "prisma",
+  "dockerfile", "containerfile", "justfile", "makefile", "mk", "cmake", "nix", "tf", "hcl",
+  "gd", "tscn", "tres", "glsl", "vert", "frag", "geom", "comp", "hlsl", "shader", "wgsl"
+]
+
+var ARCHIVE_EXTS = [
+  "zip", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "zst", "7z", "rar", "iso", "deb", "rpm", "pkg", "appimage", "apk"
+]
+
+var MODEL3D_EXTS = [
+  "blend", "obj", "fbx", "stl", "step", "stp", "iges", "igs", "gltf", "glb", "3ds", "dae", "dwg", "dxf", "kicad_pcb", "kicad_sch"
+]
 
 // Locale translations with English fallback.
 var LOCALES = {
@@ -352,6 +379,8 @@ function iconFor(name, isDir) {
   if (contains(AUDIO_EXTS, ext)) return "󰎈"
   if (contains(CODE_EXTS, ext)) return "󰅩"
   if (contains(DOCS_EXTS, ext)) return "󰈙"
+  if (contains(ARCHIVE_EXTS, ext)) return "󰛫"
+  if (contains(MODEL3D_EXTS, ext)) return "󰆧"
   return "󰈔"
 }
 
