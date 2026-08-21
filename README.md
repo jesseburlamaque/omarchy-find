@@ -47,6 +47,12 @@ omarchy plugin add https://github.com/jesseburlamaque/omarchy-find.git --enable
 omarchy restart shell
 ```
 
+> **Tip (Optional):** To assign the global keyboard shortcut (`Alt + Space`) and enable the `omarchy-find` command in your terminal, run:
+> ```sh
+> ~/.config/omarchy/plugins/jesseburlamaque.omarchy-find/bin/omarchy-find setup-keybind
+> ```
+> *(Or pass a custom shortcut, e.g. `... setup-keybind "SUPER + F"`)*
+
 ---
 
 ## Usage
@@ -55,12 +61,7 @@ You can summon Omarchy Find in four convenient ways:
 
 1. **Status Bar Widget**: Click the magnifier icon (`󰍉`) on the Omarchy top bar.
 2. **Application Launcher**: Open the Omarchy app launcher and click **Find**.
-3. **Global Keyboard Shortcut (`Alt + Space`)**:
-   Run the setup command once to configure the shortcut and enable the `omarchy-find` command:
-   ```sh
-   ~/.config/omarchy/plugins/jesseburlamaque.omarchy-find/bin/omarchy-find setup-keybind
-   ```
-   *(Or pass a custom keybind like `... setup-keybind "SUPER + F"`, or manually add `o.bind("ALT + SPACE", "Find files & folders", "omarchy-shell shell toggle jesseburlamaque.omarchy-find")` to `~/.config/hypr/bindings.lua`)*
+3. **Global Keyboard Shortcut (`Alt + Space`)**: Press `Alt + Space` to summon or dismiss the search overlay anywhere (configured during install or via `~/.config/hypr/bindings.lua`).
 4. **CLI / Terminal**:
    - `omarchy-find` — Toggle the search overlay.
    - `omarchy-find open '{"query":"notes"}'` — Open with a pre-filled query.
