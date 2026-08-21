@@ -119,21 +119,17 @@ After enabling or disabling, restart the shell:
 omarchy restart shell
 ```
 
-## For Update
+## Update
 
 ```sh
 omarchy plugin update jesseburlamaque.omarchy-find --yes
+omarchy restart shell
 ```
 
-## For Remove
+## Uninstall
 
 ```sh
 omarchy plugin remove jesseburlamaque.omarchy-find
-```
-
-Then restart the shell:
-
-```sh
 omarchy restart shell
 ```
 
