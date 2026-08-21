@@ -8,7 +8,7 @@ A fast, elegant, keyboard-driven universal file search and quick launcher for th
 
 ## Demo
 
-<video src="demo.mp4" controls="controls" width="100%"></video>
+https://github.com/user-attachments/assets/771820df-2a80-4e5d-9aee-1f0e7b9f1159
 
 ---
 
