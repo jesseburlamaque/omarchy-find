@@ -366,11 +366,19 @@ Item {
     resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
   }
 
+  // Prefer gio (honors Terminal=true .desktop entries by launching them
+  // inside a terminal), falling back to xdg-open when gio is unavailable.
+  function openPath(path) {
+    var quoted = Util.shellQuote(path)
+    Quickshell.execDetached(["bash", "-c",
+      "command -v gio >/dev/null 2>&1 && exec gio open " + quoted + " || exec xdg-open " + quoted])
+  }
+
   function activateIndex(index) {
     if (index < 0 || index >= displayModel.count) return
     var row = displayModel.get(index)
     root.dismiss()
-    Quickshell.execDetached(["xdg-open", row.path])
+    root.openPath(row.path)
   }
 
   function openEnclosingFolder(index) {
@@ -378,7 +386,7 @@ Item {
     var row = displayModel.get(index)
     root.dismiss()
     var target = row.isDir ? row.path : (row.path.slice(0, row.path.lastIndexOf("/")) || root.home)
-    Quickshell.execDetached(["xdg-open", target])
+    root.openPath(target)
   }
 
   function copyPathToClipboard(index) {
