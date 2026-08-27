@@ -5,6 +5,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "FindBackend.js" as Backend
+import "ai/AiBackend.js" as AiBackend
 
 Item {
   id: root
@@ -26,6 +27,45 @@ Item {
 
   readonly property bool isGoogleSearch: /^\s*go\s+/i.test(root.filterText)
   readonly property string googleSearchTerms: isGoogleSearch ? root.filterText.replace(/^\s*go\s+/i, "").trim() : ""
+
+  // AI search mode ("ai <question>"). Mirrors the go-search prefix pattern
+  // above. All AI state/behavior lives in AiBackend.js — this file only
+  // renders whatever it hands back via root.aiSession snapshots.
+  property string aiPrefix: "ai "
+  readonly property var aiPromptOrNull: AiBackend.matchPrefix(root.filterText, root.aiPrefix)
+  readonly property bool isAiMode: root.aiPromptOrNull !== null
+  readonly property string aiPromptText: root.isAiMode ? root.aiPromptOrNull : ""
+  property var aiSession: null
+  property bool aiConfigLoaded: false
+  property string aiConfigWarning: ""
+  property int aiStreamFlushMs: 16
+  property int aiMaxAnswerRows: 6
+  property bool aiBinaryChecked: false
+  property bool aiBinaryMissing: false
+  property string aiBinaryCheckedFor: ""
+  property var aiPendingSpawn: null
+  property int aiHandoffAttempt: 0
+  property string aiHandoffError: ""
+  readonly property int aiLineHeight: Math.round(Style.font.body * 1.45)
+  readonly property int aiAnswerMaxHeight: root.aiMaxAnswerRows * root.aiLineHeight
+  readonly property int aiChipRowHeight: Math.max(Style.space(26), Style.font.body + Style.space(10))
+
+  // Entering/leaving AI mode (prefix typed, deleted, or cleared) is the
+  // single choke point for lifecycle: entering does cheap local setup only
+  // (config already loaded, just resolve+check the binary — never spawns a
+  // process); leaving tears down any in-flight generation so no agent
+  // process ever survives the prefix being edited away, Esc, Ctrl+U, or the
+  // overlay closing (plan §20, §26.11).
+  onIsAiModeChanged: {
+    if (root.isAiMode) {
+      root.aiSession = AiBackend.snapshot()
+      root.ensureAiBinaryChecked()
+    } else {
+      root.aiCancel()
+      root.aiSession = null
+      root.aiHandoffError = ""
+    }
+  }
 
   // Protects against out-of-order search results.
   property int searchGen: 0
@@ -101,6 +141,13 @@ Item {
 
   function close() {
     root.cancelProcs()
+    root.aiCancel()
+    // AI mode is derived from filterText, which close()/dismiss() don't
+    // touch — re-summoning later with a DIFFERENT "ai ..." query while
+    // isAiMode stays true the whole time never fires onIsAiModeChanged, so
+    // without this the stale Ready snapshot (old answer, old canHandoff)
+    // would still be showing under the new question (QA P0-5).
+    root.aiSession = AiBackend.snapshot()
     root.opened = false
   }
 
@@ -122,8 +169,20 @@ Item {
     return false
   }
 
-  function dismiss() {
+  // preserveHandoffAttempt: true ONLY for the grace-timer's own "assume the
+  // terminal launched fine" dismissal (see aiHandoffGrace below) — that
+  // dismiss is not a user cancelling anything, it's this same handoff
+  // attempt optimistically concluding, and the OS process might still be
+  // alive and might still fail. Invalidating the attempt token here would
+  // make aiHandoffProcess.onExited's `superseded` check always true for
+  // that attempt, permanently discarding a real late failure (QA P0-6
+  // round 2 — this was previously unreachable dead code for exactly this
+  // reason: every dismiss(), including this one, bumped the token before
+  // the failing process could ever be correlated back to it).
+  function dismiss(preserveHandoffAttempt) {
     root.cancelProcs()
+    root.aiCancel(!preserveHandoffAttempt)
+    root.aiSession = AiBackend.snapshot() // see close() — same stale-snapshot fix (QA P0-5)
     root.opened = false
     if (root.shell && typeof root.shell.hide === "function")
       root.shell.hide(root.pluginId())
@@ -168,6 +227,15 @@ Item {
       return
     }
 
+    if (root.isAiMode) {
+      // AI prompt text edits never trigger a file search — see AiBackend.js
+      // for everything that actually happens in AI mode (nothing spawns
+      // merely from typing; see plan §13).
+      root.cancelProcs()
+      displayModel.clear()
+      return
+    }
+
     if (displayModel.count > 0 && displayModel.get(0).dir === Backend.t("googleSearch", root.locale)) {
       displayModel.clear()
     }
@@ -202,8 +270,8 @@ Item {
   // Search
 
   function runSearch() {
-    // Search only when expanded and not in Google search mode.
-    if (!root.expanded || root.isGoogleSearch) return
+    // Search only when expanded and not in Google search or AI mode.
+    if (!root.expanded || root.isGoogleSearch || root.isAiMode) return
     root.searchGen++
     if (procDirs.running || procFiles.running) {
       root.rerunPending = true
@@ -396,6 +464,255 @@ Item {
     Quickshell.execDetached(["bash", "-c", "cd " + Util.shellQuote(target) + " && (xdg-terminal-exec || omarchy-default-terminal || $TERMINAL || kitty || foot || alacritty)"])
   }
 
+  // AI search mode ---------------------------------------------------------
+  //
+  // Everything below only ever forwards raw process I/O into AiBackend.js
+  // and re-renders whatever snapshot it hands back into root.aiSession.
+  // This file never inspects adapterId/agentLabel to branch on which CLI is
+  // active — that logic lives entirely behind the adapter interface.
+
+  function applyAiConfig(rawText) {
+    var result = AiBackend.loadConfig(rawText)
+    root.aiConfigLoaded = true
+    root.aiConfigWarning = result.warning || ""
+    var cfg = AiBackend.getConfig()
+    root.aiPrefix = cfg.prefix
+    root.aiStreamFlushMs = cfg.streamFlushMs
+    root.aiMaxAnswerRows = cfg.maxAnswerRows
+    if (root.isAiMode) {
+      root.aiSession = AiBackend.snapshot()
+      root.ensureAiBinaryChecked()
+    }
+  }
+
+  // aiBinaryCheck is a single shared Process, same reuse-while-running
+  // hazard as the generation processes (QA P1-9) — never reassign it while
+  // it's still running; if the target binary changed mid-check, its own
+  // onExited re-issues for whatever is current once the slot is genuinely
+  // free, instead of us racing a new command onto it here.
+  function ensureAiBinaryChecked() {
+    var disp = AiBackend.agentDisplay()
+    if (!disp.supported) {
+      root.aiBinaryChecked = true
+      root.aiBinaryMissing = true
+      return
+    }
+    root.aiBinaryCheckedFor = disp.binary
+    if (root.aiBinaryChecked && aiBinaryCheck.checkingFor === disp.binary) return
+    if (aiBinaryCheck.running) return
+    root.aiBinaryChecked = false
+    aiBinaryCheck.checkingFor = disp.binary
+    aiBinaryCheck.command = ["which", disp.binary]
+    aiBinaryCheck.running = true
+  }
+
+  function aiKillProcessIfRunning(proc, fallbackTimer) {
+    if (!proc.running) return
+    var pid = proc.processId
+    proc.running = false
+    if (pid) {
+      Quickshell.execDetached(AiBackend.killArgv(pid, "TERM"))
+      fallbackTimer.targetPid = pid
+      fallbackTimer.restart()
+    }
+  }
+
+  // Which of the two ping-pong Process slots (if any) a new command may be
+  // assigned to right now — see AiBackend.pickFreeSlot's comment for why
+  // this check is mandatory and not optional. Returns the Process itself,
+  // or null if both are still tearing down a previous OS process.
+  //
+  // LATENT INVARIANT — read before touching either caller of this function:
+  // `proc.running === false` only means "safe to retag" because the ONLY
+  // two call sites that ever act on it are (a) aiSubmit(), driven by a key
+  // press, and (b) the Qt.callLater(aiTryDispatchPending) queued from each
+  // Process's own onExited. Both run OUTSIDE that Process's own onFinished
+  // C++ callstack. If a future change ever calls aiDispatchOrQueue() or
+  // aiTryDispatchPending() synchronously and reentrantly from INSIDE a
+  // stdout/session-change handler (e.g. a future onAiLine()-driven auto-
+  // submit), `running` reading false at that exact instant is not
+  // sufficient proof the OLD OS process has actually finished dying — this
+  // would resurrect the exact P0-1 blocker (a slot's `.gen` getting
+  // overwritten while its previous incarnation is still tearing down). Keep
+  // every dispatch on this pair either key/user-driven or behind
+  // Qt.callLater from that Process's own exit.
+  function aiFreeProc() {
+    var slot = AiBackend.pickFreeSlot(aiProcA.running, aiProcB.running)
+    return slot === "A" ? aiProcA : (slot === "B" ? aiProcB : null)
+  }
+
+  // Assigns argv to a free slot immediately, or queues it if both slots are
+  // still busy (QA P0-1) — NEVER touches a Process whose `running` is true.
+  function aiDispatchOrQueue(generation, argv) {
+    var proc = root.aiFreeProc()
+    if (!proc) {
+      root.aiPendingSpawn = { generation: generation, argv: argv }
+      return
+    }
+    root.aiPendingSpawn = null
+    proc.gen = generation
+    // Quickshell 0.3.0 quirk: with stdinEnabled=false (the default) it calls
+    // closeWriteChannel() BEFORE QProcess::start(), where Qt ignores it — so
+    // the child inherits a forever-open stdin pipe. codex exec waits for
+    // stdin EOF before emitting anything and hangs indefinitely. Workaround:
+    // spawn with stdin enabled, then flip it off in onStarted, where the
+    // setter closes the live process's write channel and the child sees EOF.
+    proc.stdinEnabled = true
+    proc.command = argv
+    proc.running = true
+  }
+
+  // Called from both aiProcA/aiProcB's onExited (deferred via Qt.callLater
+  // so this never runs nested inside the just-finished process's own C++
+  // exit handling — see AiBackend.pickFreeSlot). Drains the queue by at
+  // most one entry since only one slot can have just freed up.
+  function aiTryDispatchPending() {
+    if (!root.aiPendingSpawn) return
+    var proc = root.aiFreeProc()
+    if (!proc) return
+    var pending = root.aiPendingSpawn
+    root.aiPendingSpawn = null
+    proc.gen = pending.generation
+    proc.stdinEnabled = true // see aiDispatchOrQueue — closed again in onStarted
+    proc.command = pending.argv
+    proc.running = true
+  }
+
+  // Full teardown: kill any in-flight generation, drop anything queued, and
+  // (by default) invalidate any in-flight terminal handoff (QA P0-4) so its
+  // callbacks can't act on state that's no longer current. Returns AI mode
+  // to idle. invalidateHandoff defaults to true for every real caller
+  // (Esc, prompt-edit-away, aiSubmit(), explicit close/dismiss) — pass
+  // false ONLY when this cancel is itself a side effect of the very handoff
+  // attempt concluding (see dismiss()'s preserveHandoffAttempt), never for
+  // a genuine "user did something else" cancel.
+  function aiCancel(invalidateHandoff) {
+    root.aiPendingSpawn = null
+    root.aiKillProcessIfRunning(aiProcA, aiKillFallbackTimerA)
+    root.aiKillProcessIfRunning(aiProcB, aiKillFallbackTimerB)
+    if (invalidateHandoff !== false) root.aiHandoffAttempt++
+    aiHandoffGrace.stop()
+    AiBackend.cancel()
+  }
+
+  function aiSubmit() {
+    if (!root.isAiMode || root.aiBinaryMissing) return
+    var prompt = root.aiPromptText.trim()
+    if (prompt.length === 0) return
+    root.aiCancel()
+    var result = AiBackend.beginGeneration(prompt)
+    root.aiSession = AiBackend.snapshot()
+    root.aiHandoffError = ""
+    if (!result.argv) return // unsupported-agent config error, already reflected above
+    root.aiDispatchOrQueue(result.generation, result.argv)
+  }
+
+  function onAiLine(gen, line) {
+    var snap = AiBackend.handleLine(gen, line)
+    if (snap) root.aiSession = snap
+  }
+
+  function onAiStderr(gen, line) {
+    AiBackend.handleStderrChunk(gen, line + "\n")
+  }
+
+  function onAiExit(gen, exitCode) {
+    var snap = AiBackend.handleExit(gen, exitCode)
+    if (snap) root.aiSession = snap
+  }
+
+  function aiCopyAnswer() {
+    if (!root.aiSession || root.aiSession.state === "idle" || !root.aiSession.rawText) return
+    Quickshell.execDetached(["wl-copy", root.aiSession.rawText])
+  }
+
+  // Ready -> resume the finished session in a terminal; but if the visible
+  // prompt no longer matches what was actually submitted, Enter should ask
+  // the NEW question instead of silently resuming the OLD answer (QA P1-11).
+  function aiPromptChangedSinceSubmit() {
+    var s = root.aiSession
+    return !!(s && typeof s.prompt === "string" && s.prompt.length > 0 && root.aiPromptText.trim() !== s.prompt)
+  }
+
+  // Whether Enter should actually re-ask right now — a changed-but-EMPTY
+  // prompt (box cleared, not replaced) has nothing submittable, so it falls
+  // back to resuming the old session instead of both the footer promising a
+  // re-ask AND Enter silently doing nothing (aiSubmit() itself no-ops on an
+  // empty prompt) — this was previously inconsistent (QA round-3 nit).
+  function aiCanReask() {
+    return root.aiPromptChangedSinceSubmit() && root.aiPromptText.trim().length > 0
+  }
+
+  function aiHandoff() {
+    if (!root.aiSession || root.aiSession.state !== "ready" || !root.aiSession.canHandoff) return
+    if (root.aiCanReask()) { root.aiSubmit(); return }
+    var resumeArgv = AiBackend.buildHandoffArgv()
+    if (!resumeArgv) return
+    // beginHandoff() flips state to "handoff" so a second Enter (or key
+    // auto-repeat) can never dispatch a second terminal onto this session
+    // (QA P0-3) — the Enter handler only calls aiHandoff() while state is
+    // still "ready", and this is the only place that leaves "ready".
+    var snap = AiBackend.beginHandoff()
+    if (!snap) return
+    root.aiSession = snap
+    root.aiHandoffError = ""
+    root.aiHandoffAttempt++
+    aiHandoffProcess.attempt = root.aiHandoffAttempt
+    aiHandoffProcess.resumeArgv = resumeArgv
+    aiHandoffProcess.handled = false
+    // xdg-terminal-exec only accepts the equals form for option values
+    // ("--dir=DIR"); the space form makes it treat DIR as the command.
+    aiHandoffProcess.command = ["xdg-terminal-exec", "--dir=" + root.home, "--"].concat(resumeArgv)
+    aiHandoffProcess.running = true
+    aiHandoffGrace.restart()
+  }
+
+  // Presentation-only formatting (plan §14) — every field read below
+  // (agentLabel, modelLabel, activity, state) is already fully resolved by
+  // AiBackend/the adapter; nothing here ever compares against an agent id.
+  function aiChipText() {
+    var s = root.aiSession
+    if (!s) return "AI"
+    var parts = ["AI", s.agentLabel]
+    if (s.modelLabel) parts.push(s.modelLabel)
+    var text = parts.join(" · ")
+    if (root.aiBinaryMissing) text += " · not installed"
+    else if (s.state === "starting") text += " · starting…"
+    else if (s.state === "running") text += (s.activity === "searching" ? " · searching…" : " · thinking…")
+    // Draining means the process already exited — the answer is fully known
+    // and just finishing its (now sub-second, see AiBackend.tick) catch-up
+    // animation. "thinking…" here was misleading (QA P0-7).
+    else if (s.state === "draining") text += " · finishing…"
+    else if (s.state === "handoff") text += " · opening terminal…"
+    else if (s.state === "error") text += " · error"
+    return text
+  }
+
+  function aiFooterText() {
+    var s = root.aiSession
+    var state = s ? s.state : "idle"
+    var hint
+    if (state === "ready") {
+      if (root.aiCanReask()) {
+        hint = "Enter ask new question · Esc close"
+      } else {
+        hint = (s && s.canHandoff) ? "↵ continue in terminal · Ctrl+C copy · Esc close" : "Ctrl+C copy · Esc close (no session to resume)"
+      }
+    } else if (state === "handoff") {
+      hint = "Opening terminal…"
+    } else if (state === "error") {
+      hint = "Enter retry · Esc close"
+    } else if (state === "starting" || state === "running" || state === "draining") {
+      hint = "Esc cancel"
+    } else if (root.aiBinaryMissing) {
+      hint = "CLI not found on PATH · Esc close"
+    } else {
+      hint = "Enter ask · Esc close"
+    }
+    if (root.aiHandoffError) hint += "\n" + root.aiHandoffError
+    return hint
+  }
+
   ListModel { id: displayModel }
 
   Timer {
@@ -443,6 +760,219 @@ Item {
     }
   }
 
+  // AI search mode — config, binary check, the two generation processes,
+  // the display-drain timer, and terminal handoff. See ai/AiBackend.js for
+  // the state machine these merely feed raw OS events into.
+
+  // ~/.config/omarchy-find/ai.json is optional and NEVER created/rewritten
+  // by this plugin (plan §6) — a missing file just means built-in defaults,
+  // exactly like the FileView-backed optional config files elsewhere in
+  // this shell (see Style.qml's windowNoGapsToggle/userShellFile).
+  FileView {
+    id: aiConfigFile
+    path: root.home + "/.config/omarchy-find/ai.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyAiConfig(text())
+    onLoadFailed: root.applyAiConfig(null)
+  }
+
+  // Single shared `which` check. checkingFor + the reuse guard in
+  // ensureAiBinaryChecked() avoid the exact same reuse-while-running hazard
+  // as the generation processes below (QA P1-9): never reassign this
+  // Process while it's still running for a different binary; instead
+  // re-issue for whatever's current once its own exit confirms it's free.
+  Process {
+    id: aiBinaryCheck
+    property string checkingFor: ""
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: function(exitCode) {
+      if (aiBinaryCheck.checkingFor === root.aiBinaryCheckedFor) {
+        root.aiBinaryMissing = (exitCode !== 0)
+        root.aiBinaryChecked = true
+      } else {
+        // Deferred to the next event-loop turn for the same reason as
+        // aiProcA/aiProcB's Qt.callLater(aiTryDispatchPending) — don't touch
+        // command/running while still nested inside this Process's own exit
+        // handling.
+        Qt.callLater(root.ensureAiBinaryChecked)
+      }
+    }
+  }
+
+  // Two Process elements alternate per generation (ping-pong) instead of
+  // reusing one — but the ping-pong alone is NOT sufficient by itself: a
+  // rapid submit/cancel/submit/cancel/submit sequence can still cycle back
+  // to a slot whose OS process from an earlier generation hasn't actually
+  // died yet (Quickshell fact: running stays true until the OS process is
+  // genuinely gone, regardless of running=false having been set to request
+  // termination — see AiBackend.pickFreeSlot's comment). aiDispatchOrQueue/
+  // aiTryDispatchPending are therefore the ONLY code paths allowed to touch
+  // command+running on these two Processes; nothing else may. Which
+  // generation a callback belongs to is carried by `.gen` and re-validated
+  // inside AiBackend (isStale), never inferred from which Process fired.
+  Process {
+    id: aiProcA
+    property int gen: 0
+    // Closes the child's stdin (EOF) — see the comment in aiDispatchOrQueue.
+    onStarted: aiProcA.stdinEnabled = false
+    stdout: SplitParser { onRead: function(line) { root.onAiLine(aiProcA.gen, line) } }
+    stderr: SplitParser { onRead: function(line) { root.onAiStderr(aiProcA.gen, line) } }
+    onExited: function(exitCode) {
+      aiKillFallbackTimerA.stop()
+      aiKillFallbackTimerA.targetPid = null
+      root.onAiExit(aiProcA.gen, exitCode)
+      // Deferred to the next event-loop turn so this never runs nested
+      // inside aiProcA's own C++ exit handling (see AiBackend.pickFreeSlot).
+      Qt.callLater(root.aiTryDispatchPending)
+    }
+  }
+
+  Process {
+    id: aiProcB
+    property int gen: 0
+    // Closes the child's stdin (EOF) — see the comment in aiDispatchOrQueue.
+    onStarted: aiProcB.stdinEnabled = false
+    stdout: SplitParser { onRead: function(line) { root.onAiLine(aiProcB.gen, line) } }
+    stderr: SplitParser { onRead: function(line) { root.onAiStderr(aiProcB.gen, line) } }
+    onExited: function(exitCode) {
+      aiKillFallbackTimerB.stop()
+      aiKillFallbackTimerB.targetPid = null
+      root.onAiExit(aiProcB.gen, exitCode)
+      Qt.callLater(root.aiTryDispatchPending)
+    }
+  }
+
+  // Belt-and-suspenders process-group cleanup: aiKillProcessIfRunning()
+  // already sent SIGTERM to the whole group (agent CLI is spawned via
+  // setsid so it's its own process-group leader — see AiBackend.wrapForGroup)
+  // the instant a generation is cancelled. If anything in that group is
+  // still alive shortly after, escalate to SIGKILL. One timer PER slot (not
+  // shared) — a shared single-pid timer would let a rapid cancel of BOTH
+  // slots silently drop one of the two escalations (QA P0-2). Each timer is
+  // stopped by its own Process's onExited once the real death is confirmed,
+  // so a clean exit never leaves a stray delayed kill -KILL armed.
+  Timer {
+    id: aiKillFallbackTimerA
+    property var targetPid: null
+    interval: 500
+    repeat: false
+    onTriggered: {
+      if (aiKillFallbackTimerA.targetPid) {
+        Quickshell.execDetached(AiBackend.killArgv(aiKillFallbackTimerA.targetPid, "KILL"))
+        aiKillFallbackTimerA.targetPid = null
+      }
+    }
+  }
+
+  Timer {
+    id: aiKillFallbackTimerB
+    property var targetPid: null
+    interval: 500
+    repeat: false
+    onTriggered: {
+      if (aiKillFallbackTimerB.targetPid) {
+        Quickshell.execDetached(AiBackend.killArgv(aiKillFallbackTimerB.targetPid, "KILL"))
+        aiKillFallbackTimerB.targetPid = null
+      }
+    }
+  }
+
+  // Paced display drain (plan §17). Ticks at ~60Hz (16ms) by default so the
+  // catch-up-law reveal in AiBackend.tick() reads as continuous/smooth
+  // rather than the old 20Hz two-regime formula's visible chunky steps —
+  // measured offline (qml6 -platform offscreen QQuickText benchmark, not
+  // the live shell) that a 500+ word wrapped answer relayouts in ~1ms worst
+  // case per update, so 60Hz has no perf headroom problem here. Runs only
+  // while there's streaming to normalize; AiBackend.tick() returns null on
+  // an idle tick (nothing pending, nothing transitioned) so this only
+  // reassigns root.aiSession — and only then triggers a Text re-render —
+  // on ticks that actually revealed something.
+  Timer {
+    id: aiDrainTimer
+    interval: Math.max(8, root.aiStreamFlushMs)
+    repeat: true
+    running: !!(root.aiSession && (root.aiSession.state === "running" || root.aiSession.state === "draining"))
+    onTriggered: {
+      var snap = AiBackend.tick()
+      if (snap) root.aiSession = snap
+    }
+  }
+
+  // Terminal handoff (plan §21). xdg-terminal-exec's own `-- command args...`
+  // form spawns the resume command argv-safe end to end — no shell string
+  // ever holds the session id. `handled` lets either the exit signal or the
+  // grace timer make the launched/failed decision exactly once; `attempt`
+  // (compared against root.aiHandoffAttempt, bumped by aiCancel()) stops a
+  // callback from a handoff the user has since moved away from touching
+  // unrelated later state (QA P0-4) — e.g. it must never call root.dismiss()
+  // over a follow-on search/question the user already started typing.
+  Process {
+    id: aiHandoffProcess
+    property bool handled: true
+    property int attempt: 0
+    property var resumeArgv: null
+    stderr: StdioCollector { id: aiHandoffStderr; waitForEnd: false }
+    onExited: function(exitCode) {
+      var alreadyHandled = aiHandoffProcess.handled
+      aiHandoffProcess.handled = true
+      aiHandoffGrace.stop()
+      var superseded = aiHandoffProcess.attempt !== root.aiHandoffAttempt
+      if (exitCode === 0) {
+        if (!alreadyHandled && !superseded) root.dismiss()
+        return
+      }
+      // Non-zero exit — always log (plan §19: log raw output even when
+      // unclassified), since this may be the ONLY failure signal we ever
+      // get if the grace timer already fired first.
+      console.warn("[omarchy-find/ai] terminal handoff failed (exit " + exitCode + "): " + (aiHandoffStderr.text || "(no stderr)"))
+      if (superseded) return // aiCancel() already moved on — don't touch unrelated state
+      if (!alreadyHandled) {
+        // Still within the interactive window: the overlay and session are
+        // intact — show the error and let Enter be tried again (QA P0-6).
+        root.aiHandoffError = "Could not open a terminal — try again or check your default terminal setup"
+        var snap = AiBackend.cancelHandoff()
+        if (snap) root.aiSession = snap
+      } else if (aiHandoffProcess.resumeArgv) {
+        // Grace already declared success and closed the overlay — there is
+        // no UI left to show an error in (plan §21 can't be honored
+        // post-hoc). Surface it loudly instead of losing it silently.
+        Quickshell.execDetached(["notify-send", "Omarchy Find",
+          "Terminal failed to open — resume manually: " + aiHandoffProcess.resumeArgv.join(" ")])
+      }
+    }
+  }
+
+  Timer {
+    id: aiHandoffGrace
+    interval: 400
+    repeat: false
+    onTriggered: {
+      if (aiHandoffProcess.handled) return
+      aiHandoffProcess.handled = true
+      if (aiHandoffProcess.attempt !== root.aiHandoffAttempt) return
+      // Still running after the grace window: the terminal launched fine
+      // (whether xdg-terminal-exec exec'd in place or forked and is
+      // waiting) — plan §21: never discard a working session over this.
+      // preserveHandoffAttempt=true: this dismiss is not a user cancelling
+      // anything, it's THIS SAME attempt optimistically concluding — the OS
+      // process may still be alive and may still fail. A late failure after
+      // this point is still caught by aiHandoffProcess.onExited's
+      // alreadyHandled/notify-send branch above, but only because the
+      // attempt token survives this specific dismiss (see dismiss()'s doc).
+      root.dismiss(true)
+    }
+  }
+
+  // Known gap: Quickshell's Process exposes no error/failure signal for
+  // QProcess::FailedToStart (e.g. xdg-terminal-exec missing entirely) —
+  // only started/exited(exitCode, exitStatus) and property-change signals
+  // are in Quickshell.Io's qmltypes; `onExited` never fires for a process
+  // that never started. That specific failure mode is therefore silent
+  // (grace still fires and dismisses after 400ms; no console.warn, no
+  // notify-send) — undetectable from QML with the primitives available
+  // here, not something this fix can close.
+
   // UI
 
   PanelWindow {
@@ -473,7 +1003,11 @@ Item {
             ? (root.googleSearchTerms !== ""
                 ? (root.headerHeight + root.rowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset)
                 : (root.headerHeight + card.contentTopInset + card.contentBottomInset))
-            : root.cardHeight)
+            : root.isAiMode
+              ? (root.aiSession && root.aiSession.state !== "idle"
+                  ? (root.headerHeight + root.aiChipRowHeight + root.aiAnswerMaxHeight + footer.implicitHeight + root.contentSpacing * 3 + card.contentTopInset + card.contentBottomInset)
+                  : (root.headerHeight + root.aiChipRowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset))
+              : root.cardHeight)
         : root.headerHeight + card.contentTopInset + card.contentBottomInset
       radius: root.cornerRadius
       anchors.centerIn: parent
@@ -513,14 +1047,14 @@ Item {
           } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
             if (root.switchPanel(-1)) {
               event.accepted = true
-            } else if (root.expanded) {
+            } else if (root.expanded && !root.isAiMode) {
               root.cycleFilter(-1)
               event.accepted = true
             } else {
               event.accepted = true
             }
           } else if (event.key === Qt.Key_Tab) {
-            if (root.isGoogleSearch) {
+            if (root.isGoogleSearch || root.isAiMode) {
               event.accepted = true
             } else if (root.expanded && root.filterText.trim() !== "") {
               root.cycleFilter(1)
@@ -542,10 +1076,11 @@ Item {
             root.setFilter(root.filterText.replace(/\s+$/, "").replace(/\S+$/, ""))
             event.accepted = true
           } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_C) {
-            root.copyPathToClipboard(root.selectedIndex)
+            if (root.isAiMode) root.aiCopyAnswer()
+            else root.copyPathToClipboard(root.selectedIndex)
             event.accepted = true
           } else if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_T) {
-            root.openInTerminal(root.selectedIndex)
+            if (!root.isAiMode) root.openInTerminal(root.selectedIndex)
             event.accepted = true
           } else if (event.key === Qt.Key_Up || (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_P || event.key === Qt.Key_K))) {
             root.select(-1)
@@ -572,7 +1107,22 @@ Item {
             }
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            if (event.modifiers & Qt.AltModifier) {
+            if (root.isAiMode) {
+              // Key auto-repeat (held Enter) must never re-trigger submit/
+              // handoff — ignored outright rather than just deduped, since a
+              // repeat-fired submit while already Ready would otherwise
+              // restart a perfectly good finished answer (QA P0-3).
+              if (!event.isAutoRepeat) {
+                // Enter's meaning depends on the AiSession state (plan §5):
+                // idle/error -> submit (retry re-submits the same prompt);
+                // starting/running/draining/handoff -> no-op; ready ->
+                // terminal handoff (or a fresh submit if the prompt was
+                // edited since — see aiHandoff()'s own guard, QA P1-11).
+                var aiState = root.aiSession ? root.aiSession.state : "idle"
+                if (aiState === "idle" || aiState === "error") root.aiSubmit()
+                else if (aiState === "ready") root.aiHandoff()
+              }
+            } else if (event.modifiers & Qt.AltModifier) {
               root.openEnclosingFolder(root.selectedIndex)
             } else {
               root.activateIndex(root.selectedIndex)
@@ -628,7 +1178,7 @@ Item {
 
           Rectangle {
             id: expandButton
-            visible: !root.isGoogleSearch
+            visible: !root.isGoogleSearch && !root.isAiMode
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             width: expandLabel.implicitWidth + Style.space(18)
@@ -659,7 +1209,7 @@ Item {
 
         Flickable {
           id: chips
-          visible: root.expanded && !root.isGoogleSearch
+          visible: root.expanded && !root.isGoogleSearch && !root.isAiMode
           width: parent.width
           height: chipRow.height
           contentWidth: chipRow.width
@@ -712,7 +1262,7 @@ Item {
 
         Row {
           id: sortBar
-          visible: root.expanded && !root.isGoogleSearch
+          visible: root.expanded && !root.isGoogleSearch && !root.isAiMode
           anchors.horizontalCenter: parent.horizontalCenter
           spacing: Style.spacing.xs
 
@@ -762,8 +1312,122 @@ Item {
           }
         }
 
+        // AI mode — status chip + streaming answer panel. Nothing below
+        // branches on which agent is configured: agentLabel/modelLabel/
+        // activity/state are already fully resolved on root.aiSession by
+        // AiBackend.js and aiChipText()/aiFooterText() above (plan §2's
+        // "QML renders truth" rule).
         Item {
-          visible: root.expanded && (!root.isGoogleSearch || root.googleSearchTerms !== "")
+          id: aiPanel
+          visible: root.expanded && root.isAiMode
+          width: parent.width
+          height: (root.aiSession && root.aiSession.state !== "idle")
+            ? (root.aiChipRowHeight + root.contentSpacing + root.aiAnswerMaxHeight)
+            : root.aiChipRowHeight
+
+          Row {
+            id: aiChipRow
+            height: root.aiChipRowHeight
+            spacing: Style.spacing.sm
+
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              height: root.aiChipRowHeight
+              width: aiChipLabel.implicitWidth + Style.space(18)
+              radius: root.cornerRadius
+              color: root.aiSession && root.aiSession.state === "error" ? Util.alpha(Color.urgent, 0.18) : root.chipActive
+
+              Text {
+                id: aiChipLabel
+                anchors.centerIn: parent
+                text: root.aiChipText()
+                textFormat: Text.PlainText
+                color: root.aiSession && root.aiSession.state === "error" ? Color.urgent : root.accent
+                font.family: root.fontFamily
+                font.pixelSize: Math.max(10, Style.font.body - 1)
+              }
+            }
+
+            Text {
+              visible: root.aiConfigWarning !== ""
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.max(0, aiPanel.width - aiChipLabel.implicitWidth - Style.space(40))
+              text: root.aiConfigWarning
+              textFormat: Text.PlainText
+              color: root.foreground
+              opacity: 0.55
+              elide: Text.ElideRight
+              font.family: root.fontFamily
+              font.pixelSize: Math.max(9, Style.font.body - 3)
+            }
+          }
+
+          Rectangle {
+            id: aiAnswerBox
+            visible: root.aiSession && root.aiSession.state !== "idle"
+            anchors.top: aiChipRow.bottom
+            anchors.topMargin: root.contentSpacing
+            width: parent.width
+            height: root.aiAnswerMaxHeight
+            radius: root.cornerRadius
+            color: root.chipIdle
+
+            Flickable {
+              id: aiAnswerFlick
+              anchors.fill: parent
+              anchors.margins: Style.spacing.sm
+              clip: true
+              contentWidth: width
+              contentHeight: aiAnswerText.implicitHeight
+              boundsBehavior: Flickable.StopAtBounds
+              property bool pinnedToBottom: true
+
+              // Programmatic contentY writes (the auto-scroll branch just
+              // below) never toggle `moving`, so this only fires on genuine
+              // user drag/flick — plan §17/§26.9's scroll-pin behavior.
+              onContentHeightChanged: {
+                if (aiAnswerFlick.pinnedToBottom)
+                  aiAnswerFlick.contentY = Math.max(0, aiAnswerFlick.contentHeight - aiAnswerFlick.height)
+              }
+              onMovementEnded: {
+                aiAnswerFlick.pinnedToBottom = aiAnswerFlick.contentY >= (aiAnswerFlick.contentHeight - aiAnswerFlick.height - 4)
+              }
+
+              Text {
+                id: aiAnswerText
+                width: aiAnswerFlick.width
+                text: {
+                  var s = root.aiSession
+                  if (!s) return ""
+                  if (s.state !== "error") return s.displayedText
+                  // A mid-stream failure must not hide whatever the agent
+                  // already said (setError() flushes pendingText into
+                  // displayedText for exactly this) — show the retained
+                  // partial answer with a clearly separated error line
+                  // beneath it, not the error message alone.
+                  var msg = s.errorMessage || ""
+                  return s.displayedText && s.displayedText.length > 0
+                    ? s.displayedText + "\n\n⚠ " + msg
+                    : msg
+                }
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                // Only redden the whole block when there's nothing but the
+                // error to show — a retained partial answer should read as
+                // an answer, with just the trailing "⚠ " line marking the
+                // failure, not the entire thing as an error.
+                color: (root.aiSession && root.aiSession.state === "error" &&
+                        (!root.aiSession.displayedText || root.aiSession.displayedText.length === 0))
+                  ? Color.urgent : root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+              }
+            }
+          }
+        }
+
+        Item {
+          visible: root.expanded && !root.isAiMode && (!root.isGoogleSearch || root.googleSearchTerms !== "")
           width: parent.width
           height: root.isGoogleSearch
             ? root.rowHeight
@@ -906,7 +1570,7 @@ Item {
 
         Text {
           id: countLabel
-          visible: root.expanded && !root.isGoogleSearch && (text !== "")
+          visible: root.expanded && !root.isGoogleSearch && !root.isAiMode && (text !== "")
           width: parent.width
           horizontalAlignment: Text.AlignHCenter
           text: root.searching
@@ -937,7 +1601,9 @@ Item {
           horizontalAlignment: Text.AlignHCenter
           text: root.isGoogleSearch
             ? Backend.t("googleFooter", root.locale)
-            : Backend.t("footer", root.locale)
+            : root.isAiMode
+              ? root.aiFooterText()
+              : Backend.t("footer", root.locale)
           textFormat: Text.PlainText
           color: root.foreground
           opacity: 0.45

@@ -1,0 +1,8 @@
+{
+  "agent": "claude",
+  "model": null,
+  "prefix": "ai ",
+  "maxAnswerRows": 6,
+  "drainBaseCps": 60,
+  "streamFlushMs": 16
+}

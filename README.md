@@ -24,6 +24,7 @@ Beyond simple file launching, it acts as a central productivity hub:
 - **Terminal Integration:** Spawn your preferred terminal directly inside the target directory (`Ctrl+T`).
 - **Clipboard Utility:** Instantly copy clean absolute paths to the clipboard (`Ctrl+C`).
 - **Web Search:** Type `go <terms>` to seamlessly perform an instant Google search in your default browser.
+- **AI Search Mode:** Type `ai <question>` to stream an answer from your installed Claude Code, Codex, or Antigravity CLI right in the overlay, then press `Enter` to resume the exact same session in a terminal.
 
 ---
 
@@ -40,6 +41,7 @@ Beyond simple file launching, it acts as a central productivity hub:
   - **Code:** Source files and scripts across all major programming languages.
 - **Instant Sorting Modes:** Switch on the fly between **Relevance**, **Most Recent**, **Oldest**, **Name (A → Z)**, and **Name (Z → A)** via single click or `Ctrl+S`.
 - **Quick Web Search:** Type `go <query>` to hide local file lists and open Google search directly in your browser.
+- **AI Search Mode:** Type `ai <question>` to get a streamed one-shot answer from your existing agent CLI (Claude Code by default; Codex and Antigravity also supported), with no API keys managed by this plugin — it's a thin frontend over whichever CLI you already have authenticated. `Enter` after the answer completes resumes the exact same agent session in a terminal, with no replay of your original prompt.
 - **Ergonomic Keyboard Navigation:** Full support for arrow keys, readline navigation (`Ctrl+N`/`Ctrl+P`), vim-style shortcuts (`Ctrl+J`/`Ctrl+K`), `Home`/`End`, and `PageUp`/`PageDown`.
 - **Status Bar Widget & CLI:** Includes a bar magnifier icon widget, a launcher desktop entry, and the `omarchy-find` CLI command.
 - **Native Shell Aesthetics:** Automatically follows active Omarchy themes, colors, and typography.
@@ -80,6 +82,7 @@ You can summon Omarchy Find in four convenient ways:
 | -------- | ----------- |
 | `Type` | Search files, folders and paths in real time |
 | `go <query>` | Instant Google Search in default browser |
+| `ai <question>` | Stream an answer from your agent CLI; `Enter` again resumes the same session in a terminal |
 | `↑ / ↓` | Navigate up / down through results |
 | `Ctrl+N / Ctrl+P` | Readline-style next / previous item navigation |
 | `Ctrl+J / Ctrl+K` | Vim-style next / previous item navigation |
@@ -95,6 +98,33 @@ You can summon Omarchy Find in four convenient ways:
 | `Ctrl+W` / `Ctrl+Backspace` | Delete previous word in search input |
 | `Ctrl+U` | Clear entire search query |
 | `Esc` | Clear query if typed, or close overlay if query is empty |
+
+### AI Search Mode
+
+Type `ai <question>` to ask your already-installed, already-authenticated agent CLI a question:
+
+```text
+ai explain why my systemd user service isn't starting
+```
+
+The answer streams into the overlay as it's generated. Once it finishes, press `Enter` again to open a terminal that resumes the *exact same* agent conversation — nothing is replayed, and no chat history is invented by this plugin. `Esc` at any point cancels the request and no agent process is left running.
+
+Supported agents: **Claude Code** (default), **Codex**, and **Antigravity** (`agy`). Omarchy Find never manages API keys or does its own inference — it only shells out to whichever CLI is already configured on your machine.
+
+To change the agent or tune streaming behavior, create `~/.config/omarchy-find/ai.json` (this file is optional and is never created automatically):
+
+```json
+{
+  "agent": "claude",
+  "model": null,
+  "prefix": "ai ",
+  "maxAnswerRows": 6,
+  "drainBaseCps": 60,
+  "streamFlushMs": 16
+}
+```
+
+See `share/ai.json.example` for a copy of the same defaults. `agent` is one of `claude`, `codex`, or `agy`; `model` overrides the CLI's default model when set; `prefix` changes the trigger word from `ai `. `streamFlushMs` is how often the streamed answer redraws (default 16ms/60Hz, for a smooth continuous reveal); `drainBaseCps` is the minimum reveal speed in characters/second for a thin trickle of text — bursts from the CLI always reveal faster than this on their own.
 
 ---
 
