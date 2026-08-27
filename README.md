@@ -10,6 +10,12 @@ A fast, elegant, keyboard-driven universal file search and quick launcher for th
 
 https://github.com/user-attachments/assets/771820df-2a80-4e5d-9aee-1f0e7b9f1159
 
+### AI Search Mode
+
+![AI Search Mode demo — ai question streams an answer, Enter resumes the session in a terminal](media/ai-demo.gif)
+
+Type `ai <question>` to stream an answer from your already-installed agent CLI, then press `Enter` to continue the *exact same* conversation in a terminal — no replay, no separate chat history. Full-quality captures per agent: [Claude Code](media/ai-demo-claude.mp4) · [Codex](media/ai-demo-codex.mp4) · [Antigravity](media/ai-demo-agy.mp4).
+
 ---
 
 ## About
