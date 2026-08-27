@@ -38,6 +38,12 @@ Item {
   property var aiSession: null
   property bool aiConfigLoaded: false
   property string aiConfigWarning: ""
+  // Sentinel `undefined` (never applied yet) distinguishes "first load" from
+  // "reloaded to an empty file" (""); reloaded to "absent" is `null`. Lets
+  // applyAiConfig() short-circuit a redundant reload (e.g. the watchdog
+  // Timer firing when nothing actually changed) as a genuine no-op instead
+  // of re-touching aiSession/binary-check on every firing.
+  property var aiConfigLastRawText: undefined
   property int aiStreamFlushMs: 16
   property int aiMaxAnswerRows: 6
   property bool aiBinaryChecked: false
@@ -471,7 +477,16 @@ Item {
   // This file never inspects adapterId/agentLabel to branch on which CLI is
   // active — that logic lives entirely behind the adapter interface.
 
+  // Called on every load, hot-reload (create/edit/delete — see
+  // aiConfigFile below), and watchdog firing. Config changes apply to
+  // runtime state immediately (chip label, prefix, drain pacing, binary
+  // re-check); an ALREADY-RUNNING generation is untouched — AiBackend
+  // freezes session.config at beginGeneration() time (see AiBackend.js),
+  // so a live reload here only ever affects the NEXT submit/resume, never
+  // an in-flight one.
   function applyAiConfig(rawText) {
+    if (root.aiConfigLoaded && rawText === root.aiConfigLastRawText) return // unchanged — no-op
+    root.aiConfigLastRawText = rawText
     var result = AiBackend.loadConfig(rawText)
     root.aiConfigLoaded = true
     root.aiConfigWarning = result.warning || ""
@@ -768,6 +783,26 @@ Item {
   // by this plugin (plan §6) — a missing file just means built-in defaults,
   // exactly like the FileView-backed optional config files elsewhere in
   // this shell (see Style.qml's windowNoGapsToggle/userShellFile).
+  //
+  // Hot reload (create/edit/delete, all live): watchChanges alone only
+  // arms Quickshell's underlying QFileSystemWatcher — per
+  // quickshell/src/io/fileview.cpp's updateWatchedFiles()/
+  // onWatchedDirectoryChanged(), it watches BOTH the target file AND its
+  // parent directory, so file creation while previously absent is natively
+  // detected too (the directory watch notices the new entry, confirms the
+  // file now exists, and emits fileChanged() — no polling needed for that
+  // case). But watchChanges alone does NOT re-read content — text() stays
+  // stale until something calls reload(); onFileChanged: reload() is the
+  // missing half (this exact two-part pattern already exists for
+  // userShellFile in Style.qml). reload() itself routes back through
+  // onLoaded (edit, or create) / onLoadFailed (delete) with fresh content
+  // either way. aiConfigWatchdog below is a cheap belt-and-suspenders
+  // fallback only for the one native gap: if ~/.config/omarchy-find/ itself
+  // doesn't exist yet at shell startup, there's no directory to watch until
+  // something creates it — a rare edge case (creating ai.json normally
+  // creates its parent dir too), but a periodic reload() is a negligible-
+  // cost small local file stat, and applyAiConfig()'s own content-equality
+  // guard makes every redundant firing a genuine no-op.
   FileView {
     id: aiConfigFile
     path: root.home + "/.config/omarchy-find/ai.json"
@@ -775,6 +810,15 @@ Item {
     printErrors: false
     onLoaded: root.applyAiConfig(text())
     onLoadFailed: root.applyAiConfig(null)
+    onFileChanged: reload()
+  }
+
+  Timer {
+    id: aiConfigWatchdog
+    interval: 5000
+    repeat: true
+    running: true
+    onTriggered: aiConfigFile.reload()
   }
 
   // Single shared `which` check. checkingFor + the reuse guard in
