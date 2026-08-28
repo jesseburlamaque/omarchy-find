@@ -47,6 +47,54 @@ Beyond simple file launching, it acts as a central productivity hub:
 
 ---
 
+## AI Search Mode
+
+Type `ai <question>` in the search overlay to stream answers from your preferred AI coding agent directly inside the overlay. Press `Enter` to continue the conversation in a full terminal session, `Ctrl+C` to copy the response, or `Esc` to cancel.
+
+### Automatic Agent Detection
+
+By default, Omarchy Find automatically detects and uses the default AI agent configured in your Omarchy system (`omarchy default agent` / `~/.config/omarchy/defaults/agent`).
+
+| Omarchy Default Agent | AI Search Mode Status |
+|---|---|
+| **Claude Code** (`claude`) | ✅ Fully supported (automatic streaming & terminal handoff) |
+| **Codex** (`codex`) | ✅ Fully supported (automatic streaming & terminal handoff) |
+| **Antigravity** (`agy`) | ✅ Fully supported via `ai.json` configuration |
+| **OpenCode** (`opencode`) | ⏳ Displays guidance message (headless mode coming soon) |
+
+### Configuring an Agent Override (`ai.json`)
+
+To override the default agent specifically for Omarchy Find (for example, to use **Antigravity** while keeping OpenCode as your primary terminal agent), create `~/.config/omarchy-find/ai.json`:
+
+```json
+{
+  "agent": "agy"
+}
+```
+
+#### Available Fields (All Optional)
+
+```json
+{
+  "agent": "agy",          // "claude" | "codex" | "agy"
+  "model": null,           // Override model string (e.g. "claude-3-5-sonnet") or null for CLI default
+  "prefix": "ai ",         // Trigger prefix in the overlay
+  "maxAnswerRows": 6       // Maximum visible answer lines before scrolling
+}
+```
+
+The plugin hot-reloads config changes live without requiring a shell restart.
+
+### Returning to the System Default Agent
+
+To switch back to your system-wide Omarchy default agent:
+- **Delete the override file:** `rm ~/.config/omarchy-find/ai.json`
+- **Or remove the `"agent"` key:** Leave `ai.json` without an `"agent"` field.
+
+Omarchy Find will immediately detect the change and resume using your Omarchy default agent (`~/.config/omarchy/defaults/agent`).
+
+---
+
 ## Install
 
 ```sh
