@@ -3,3 +3,4 @@ __pycache__/
 node_modules/
 install.sh
 BACKLOG.md
+media/*.mp4
