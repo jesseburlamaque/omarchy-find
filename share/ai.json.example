@@ -1,0 +1,10 @@
+{
+  "agent": "claude",
+  "model": null,
+  "prefix": "ai ",
+  "maxAnswerRows": 6,
+  "drainBaseCps": 60,
+  "rampDoubleMs": 500,
+  "maxCps": 2400,
+  "streamFlushMs": 16
+}
