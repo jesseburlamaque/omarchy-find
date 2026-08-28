@@ -66,6 +66,22 @@ function eq(actual, expected, msg) {
   assert(ok, msg + " (expected " + JSON.stringify(expected) + ", got " + JSON.stringify(actual) + ")")
 }
 
+// Ticks the typewriter until Draining settles into a terminal state and
+// returns the final snapshot. Since ALL text is paced now (no first-chunk
+// immediate flush), even a tiny answer spends a few ticks in Draining after
+// the process exits — lifecycle tests use this to reach Ready before
+// asserting on handoff/state.
+function drainToReady(maxTicks) {
+  let snap = AiBackend.snapshot()
+  let ticks = 0
+  while (snap.state === "draining" && ticks < (maxTicks || 5000)) {
+    const t = AiBackend.tick()
+    if (t) snap = t
+    ticks++
+  }
+  return snap
+}
+
 // ------------------------------------------------------------ AiConfig ----
 
 {
@@ -445,13 +461,14 @@ for (const id of ["claude", "codex", "agy"]) {
 
 {
   // Full run-to-Ready + drain behavior, including raw/displayed separation.
-  AiBackend.loadConfig(JSON.stringify({ streamFlushMs: 16, drainBaseCps: 1 })) // near-zero floor so pendingText survives many ticks
+  AiBackend.loadConfig(JSON.stringify({ streamFlushMs: 16, drainBaseCps: 1 })) // near-zero starting rate so pendingText survives many ticks
   AiBackend.cancel()
   const g = AiBackend.beginGeneration("drain test")
   const gen = g.generation
   AiBackend.handleLine(gen, '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"AB"}}}')
   let snap = AiBackend.snapshot()
-  eq(snap.displayedText, "AB", "first chunk (2 chars) is flushed immediately regardless of drain rate")
+  eq(snap.displayedText, "", "NOTHING renders in the same callback text arrives in — even the first chunk is paced through the typewriter (no immediate-flush fast path)")
+  eq(snap.pendingText, "AB", "the first chunk waits in pendingText for the display timer")
 
   const bigChunk = "C".repeat(500)
   AiBackend.handleLine(gen, JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: bigChunk } } }))
@@ -464,7 +481,7 @@ for (const id of ["claude", "codex", "agy"]) {
     AiBackend.tick()
     ticks++
   }
-  assert(ticks > 1, "draining a large backlog takes more than one tick (the smooth catch-up law, not an unbounded single-tick dump — plan §17)")
+  assert(ticks > 1, "draining a large backlog takes more than one tick (the ramped typewriter law, not an unbounded single-tick dump — plan §17)")
   eq(AiBackend.snapshot().displayedText, AiBackend.snapshot().rawText, "once fully drained, displayedText exactly equals rawText")
 
   // pendingText is already 0 here, so handleExit()'s own return already
@@ -488,11 +505,11 @@ for (const id of ["claude", "codex", "agy"]) {
 
   AiBackend.handleLine(gen, JSON.stringify({ event: "init", conversation_id: "server-assigned-id" }))
   AiBackend.handleLine(gen, JSON.stringify({ event: "step_update", step_update: { conversation_id: "server-assigned-id", step_index: 1, state: "DONE", step_type: "agent_response", text_delta: "ZEBRA" } }))
-  // "ZEBRA" is short enough to land entirely via the first-chunk immediate
-  // flush, so pendingText is already 0 by the time the process exits —
-  // handleExit()'s own return (finishDraining() runs synchronously inside
-  // it) already reflects Ready; tick() would correctly no-op (return null).
-  const snap = AiBackend.handleExit(gen, 0)
+  // Even a 5-char answer is paced through the typewriter now, so the exit
+  // lands in Draining and a few ticks are needed to reach Ready.
+  AiBackend.handleExit(gen, 0)
+  const snap = drainToReady()
+  eq(snap.state, "ready", "a tiny answer still settles to Ready after its typewriter ticks")
   eq(snap.sessionRef, "server-assigned-id", "server-reported conversation_id overrides the caller-supplied uuid")
   assert(snap.sessionRef !== callerUuid, "handoff never uses the caller uuid when the server reported a different id")
 
@@ -539,9 +556,8 @@ for (const id of ["claude", "codex", "agy"]) {
   const g = AiBackend.beginGeneration("handoff test")
   AiBackend.handleLine(g.generation, '{"type":"system","subtype":"init","session_id":"handoff-sess","cwd":"/"}')
   AiBackend.handleLine(g.generation, '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}}')
-  // "hello" lands via the first-chunk flush, so pendingText is already 0 at
-  // exit — use handleExit()'s own return (see the agy test above for why).
-  let snap = AiBackend.handleExit(g.generation, 0)
+  AiBackend.handleExit(g.generation, 0)
+  let snap = drainToReady() // "hello" types out over a few Draining ticks
   eq(snap.state, "ready", "reaches ready before testing handoff")
 
   const resumeArgv1 = AiBackend.buildHandoffArgv()
@@ -565,62 +581,77 @@ for (const id of ["claude", "codex", "agy"]) {
 }
 
 {
-  // Draining hard bound (plan §17, QA P0-7/round-4 rewrite): once the
-  // process exits, even a very large backlog must reach Ready within
-  // DRAIN_MAX_MS (~300ms) of real time — a 20-second "thinking…" dead zone
-  // after the process already exited was the original bug. The reveal law
-  // itself changed (single smooth exponential catch-up, not the old two-
-  // regime normal+boost formula), but the hard completion bound is the same
-  // requirement, now expressed as ticks-derived-from-ms so it stays correct
-  // at whatever streamFlushMs is actually configured.
+  // Post-exit drain law (rewritten AGAIN after live-overlay feedback: the
+  // previous ~300ms hard deadline flooded the whole remaining answer onto
+  // the screen the moment the process exited — with fast CLIs that deliver
+  // most of the text right before exit, that WAS the "bursting text"
+  // complaint). Draining now runs the same exponential ramp-over-time
+  // typewriter as Running, just with an accelerated ramp clock: it must
+  // (1) never reveal more than the maxCps ceiling allows in one frame,
+  // (2) only ever speed up (the "exponential increase in speed" ask), and
+  // (3) still complete — a big backlog takes seconds of typewriter, never
+  // an instant dump and never an unbounded tail (rate keeps doubling, so
+  // total time grows only logarithmically with answer length).
   const streamFlushMs = 16 // real default (60Hz)
   AiBackend.loadConfig(JSON.stringify({ streamFlushMs: streamFlushMs, drainBaseCps: 60 }))
+  const cfg = AiBackend.getConfig()
   AiBackend.cancel()
   const g = AiBackend.beginGeneration("big drain test")
   const bigChunk = "X".repeat(8000)
   AiBackend.handleLine(g.generation, JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: bigChunk } } }))
-  AiBackend.handleExit(g.generation, 0) // -> Draining, 8000-char backlog pending
+  AiBackend.handleExit(g.generation, 0) // -> Draining, full 8000-char backlog pending (no immediate-flush prefix)
 
+  // floor(maxCps*dt/1000 + carry<1) can land at most 1 char over the exact
+  // per-frame rate ceiling — that's the rounding carry, not a burst.
+  const perTickCeiling = Math.floor((cfg.maxCps * streamFlushMs) / 1000) + 1
   let ticks = 0
-  let snap
-  do {
-    snap = AiBackend.tick()
+  let lastRevealed = 0
+  let state = "draining"
+  while (state === "draining" && ticks < 2000) {
+    const before = AiBackend.snapshot().displayedText.length
+    const snap = AiBackend.tick() // null on a sub-character carry tick — read state via snapshot()
+    const after = AiBackend.snapshot()
+    const revealed = after.displayedText.length - before
+    assert(revealed <= perTickCeiling, "draining tick " + ticks + " revealed " + revealed + " chars (> " + perTickCeiling + " = above the maxCps frame ceiling — a dump)")
+    // The very last tick legitimately reveals only whatever is left, so the
+    // only-ever-speeds-up check applies while a backlog still remains.
+    if (revealed > 0 && after.pendingText.length > 0) {
+      assert(revealed >= lastRevealed - 1, "draining tick " + ticks + " revealed LESS than the previous tick (" + revealed + " < " + lastRevealed + " - 1) — the typewriter must only ever speed up")
+      lastRevealed = revealed
+    }
+    state = snap ? snap.state : after.state
     ticks++
-  } while (snap.state === "draining" && ticks < 1000)
+  }
 
-  eq(snap.state, "ready", "an 8000-char backlog still reaches Ready (drain always completes)")
-  eq(snap.displayedText, snap.rawText, "fully drained: displayedText exactly equals rawText — item 7(c)")
-  // Mirrors AiBackend's own maxTicks derivation (DRAIN_MAX_MS / tick
-  // interval) rather than a hardcoded number, so this stays a bound check —
-  // not a brittle exact-count assertion — if either constant is retuned.
-  const DRAIN_MAX_MS = 300
-  const maxTicks = Math.ceil(DRAIN_MAX_MS / streamFlushMs)
-  assert(ticks <= maxTicks, "an 8000-char backlog drains within the ~300ms hard bound (" + ticks + " <= " + maxTicks + " ticks at " + streamFlushMs + "ms/tick) — item 7(c)")
-  // maxTicks itself is a ceil() of 300/streamFlushMs, so the wall-clock
-  // equivalent can legitimately land up to one tick's worth over the
-  // nominal 300ms target (19 ticks * 16ms = 304ms here) — that's the
-  // "~300ms" tolerance, not a bug in the bound.
-  assert((ticks * streamFlushMs) <= 300 + streamFlushMs, "wall-clock equivalent of the drain stays within ~300ms, +1 tick of ceil() slack (" + (ticks * streamFlushMs) + "ms)")
+  const finalSnap = AiBackend.snapshot()
+  eq(finalSnap.state, "ready", "an 8000-char backlog still reaches Ready (drain always completes)")
+  eq(finalSnap.displayedText, finalSnap.rawText, "fully drained: displayedText exactly equals rawText")
+  // Loose analytic sanity bound (not an exact count): defaults + 2x drain
+  // acceleration put an 8000-char worst case around ~4s of simulated time;
+  // 6s of ticks is comfortable headroom without ever tolerating a stall.
+  assert(ticks <= Math.ceil(6000 / streamFlushMs), "an 8000-char backlog completes within ~6s of accelerated typewriter (" + ticks + " ticks at " + streamFlushMs + "ms/tick)")
+  assert(ticks > 50, "an 8000-char backlog takes MANY ticks — a typewriter, never the old ~300ms flood (" + ticks + " ticks)")
 }
 
 {
-  // Smoothness regression test (rewritten after live-overlay feedback: the
-  // old 20Hz two-regime formula was visibly chunky/bursty — lag built up
-  // then dumped once the bounded "boost" kicked in). Replays the REAL
-  // chunk boundaries captured from a live `claude -p ... --include-partial-
-  // messages` run (fixtures/claude_zebra_qa2_1.out from the QA scratchpad —
-  // genuine model output, split at the actual text_delta event
-  // boundaries the CLI emitted) through a full simulated 16ms-tick timeline
-  // of handleLine()+tick(). Exact wall-clock inter-arrival gaps weren't
-  // recorded by the raw capture (only event content was saved), so a
-  // deterministic, plausible synthetic arrival schedule is used — noted
-  // explicitly rather than claimed as literally recorded — including one
-  // deliberately injected burst (three real chunks landing on the same
-  // tick) to specifically exercise the "fast generation, uneven catch-up"
-  // complaint that motivated this rewrite.
-  AiBackend.loadConfig(null) // real defaults: streamFlushMs=16 (60Hz), drainBaseCps=60
+  // Typewriter regression test (third rewrite, after live-overlay feedback
+  // that the backlog-proportional catch-up law STILL burst — a large chunk
+  // arriving meant a proportionally large reveal that same frame). Replays
+  // the REAL chunk boundaries captured from a live `claude -p ...
+  // --include-partial-messages` run (fixtures/claude_zebra_qa2_1.out from
+  // the QA scratchpad — genuine model output, split at the actual
+  // text_delta event boundaries the CLI emitted) through a full simulated
+  // 16ms-tick timeline of handleLine()+tick(), with a deterministic
+  // synthetic arrival schedule including one deliberately injected burst
+  // (three real chunks landing on the same tick). Under the ramp-over-time
+  // law, that burst must have ZERO effect on the per-tick reveal — the
+  // typewriter's speed is a function of elapsed reveal time only, and only
+  // ever increases.
+  AiBackend.loadConfig(null) // real defaults: 60cps start, x2 per 500ms, 2400cps cap, 16ms ticks
+  const cfg = AiBackend.getConfig()
   AiBackend.cancel()
-  const TICK_MS = 16
+  const TICK_MS = cfg.streamFlushMs
+  const perTickCeiling = Math.floor((cfg.maxCps * TICK_MS) / 1000) + 1 // +1 = fractional carry, not a burst
 
   const realChunks = [
     "I'll update the existing memory with the new codename.",
@@ -628,134 +659,124 @@ for (const id of ["claude", "codex", "agy"]) {
     "ZEBRA-QA-ROUND-2", "** (noting it was previously ZEBRA). ",
     "This will persist across future sessions."
   ]
-  // Chunk 0 lands at tick 0 (first-chunk immediate flush, <=80 chars).
+  // Chunk 0 lands at tick 0 and is paced like everything else (there is no
+  // immediate-flush fast path — the typewriter starts on the first tick).
   // Chunks 2,3,4 all land on tick 5 together — the injected burst.
   const arrivalTick = [0, 2, 5, 5, 5]
 
   const g = AiBackend.beginGeneration("zebra")
   var deliveredIdx = 0
-  var arrivalTickOfChar = [] // arrivalTickOfChar[i] = simulated tick at which rawText[i] arrived
   var displayedLenPrev = 0
-  var worstLagMs = 0
+  var lastRevealed = 0
   var currentTick = 0
   const MAX_TICKS = 500
 
   function deliverDueChunks(tick) {
     while (deliveredIdx < realChunks.length && arrivalTick[deliveredIdx] <= tick) {
-      const chunk = realChunks[deliveredIdx]
       AiBackend.handleLine(g.generation, JSON.stringify({
-        type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: chunk } }
+        type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: realChunks[deliveredIdx] } }
       }))
-      for (var k = 0; k < chunk.length; k++) arrivalTickOfChar.push(tick)
       deliveredIdx++
     }
   }
 
-  while (deliveredIdx < realChunks.length && currentTick < MAX_TICKS) {
-    deliverDueChunks(currentTick)
-    const tickSnap = AiBackend.tick()
-    const displayedLen = tickSnap ? tickSnap.displayedText.length : AiBackend.snapshot().displayedText.length
-    const revealed = displayedLen - displayedLenPrev
-
-    // (a) after the first-chunk flush (tick 0), no single tick reveals more
-    // than ~40 chars — continuous/smooth, never a burst dump. This
-    // includes the deliberately injected 3-chunk burst on tick 5.
-    if (currentTick > 0 && revealed > 0) {
-      assert(revealed <= 40, "tick " + currentTick + " revealed " + revealed + " chars in one step (>40 = a burst dump, exactly the reported bug)")
+  function checkTick() {
+    AiBackend.tick() // may return null on a sub-character carry tick — always re-snapshot
+    const after = AiBackend.snapshot()
+    const revealed = after.displayedText.length - displayedLenPrev
+    // (a) no single tick may reveal more than the maxCps frame ceiling —
+    // even on the tick where three chunks landed at once. Backlog size
+    // must have no influence on reveal size (the previous two laws' bug).
+    if (currentTick > 0) {
+      assert(revealed <= perTickCeiling, "tick " + currentTick + " revealed " + revealed + " chars in one step (>" + perTickCeiling + " = a burst dump, exactly the reported bug)")
     }
-
-    // (b) simulated display lag: how far behind (in simulated ms) the most
-    // recently displayed character is relative to when its content
-    // actually arrived — the direct analogue of what a viewer perceives.
-    if (displayedLen > 0 && displayedLen <= arrivalTickOfChar.length) {
-      const lagMs = (currentTick - arrivalTickOfChar[displayedLen - 1]) * TICK_MS
-      if (lagMs > worstLagMs) worstLagMs = lagMs
+    // (b) among ticks that reveal text (and aren't the final clamped-to-
+    // whatever-is-left tick), the reveal count only ever grows (±1 for the
+    // fractional carry): the requested "exponential increase in speed".
+    if (currentTick > 0 && revealed > 0 && after.pendingText.length > 0) {
+      assert(revealed >= lastRevealed - 1, "tick " + currentTick + " revealed LESS than an earlier tick (" + revealed + " < " + lastRevealed + " - 1) — the typewriter slowed down")
+      lastRevealed = revealed
     }
-
-    displayedLenPrev = displayedLen
+    displayedLenPrev = after.displayedText.length
     currentTick++
   }
-  // Drain whatever's still pending after the last real chunk arrives, same
-  // lag/smoothness checks, before the process "exits" below.
+
+  while (deliveredIdx < realChunks.length && currentTick < MAX_TICKS) {
+    deliverDueChunks(currentTick)
+    checkTick()
+  }
+  // Type out whatever is still pending after the last real chunk arrives,
+  // same pacing checks, before the process "exits" below.
   while (AiBackend.snapshot().pendingText.length > 0 && currentTick < MAX_TICKS) {
-    const tickSnap = AiBackend.tick()
-    const displayedLen = tickSnap.displayedText.length
-    const revealed = displayedLen - displayedLenPrev
-    assert(revealed <= 40, "tick " + currentTick + " revealed " + revealed + " chars in one step (>40 = a burst dump)")
-    if (displayedLen > 0 && displayedLen <= arrivalTickOfChar.length) {
-      const lagMs = (currentTick - arrivalTickOfChar[displayedLen - 1]) * TICK_MS
-      if (lagMs > worstLagMs) worstLagMs = lagMs
-    }
-    displayedLenPrev = displayedLen
-    currentTick++
+    checkTick()
   }
 
   assert(currentTick < MAX_TICKS, "streaming converges within the simulated tick budget (sanity)")
-  assert(worstLagMs < 400, "simulated display lag (" + worstLagMs + "ms) stays under ~400ms while streaming — item 7(b), matches web-app-chat feel")
+  assert(currentTick > 20, "a ~210-char answer takes a meaningful number of ticks to type out — a typewriter, not a dump (" + currentTick + " ticks)")
 
-  // (c) Draining completes within the bound with displayedText === rawText
-  // at Ready — the process "exits" here, mid-catch-up is fine (that's what
-  // Draining is for), but there may already be nothing left pending since
-  // the loop above drained it — either is a valid real-world timing.
-  const pendingAtExit = AiBackend.snapshot().pendingText.length
+  // (c) The process "exits" with the paced backlog already typed out, so
+  // Draining settles synchronously inside handleExit(); if any residue
+  // remained, the accelerated ramp would finish it — either way Ready must
+  // arrive with displayedText === rawText, byte-exact.
   const exitSnap = AiBackend.handleExit(g.generation, 0)
   var drainTicks = 0
   var finalState = exitSnap
-  while (finalState.state === "draining" && drainTicks < 100) {
-    finalState = AiBackend.tick()
+  while (finalState.state === "draining" && drainTicks < 200) {
+    const t = AiBackend.tick()
+    if (t) finalState = t
     drainTicks++
   }
   eq(finalState.state, "ready", "reaches Ready once fully drained — item 7(c)")
   eq(finalState.displayedText, finalState.rawText, "displayedText === rawText at Ready — item 7(c)")
   eq(finalState.rawText, realChunks.join(""), "the full real answer is reproduced byte-exact, in order")
-  const maxDrainTicks = Math.ceil(300 / TICK_MS)
-  assert(drainTicks <= maxDrainTicks, "any residual backlog at exit (" + pendingAtExit + " chars) still drains within the ~300ms bound")
 }
 
 {
   // Supplementary stress sanity (not fixture-based, synthetic): a large
   // sudden RUNNING-state burst (mimicking an adapter like Codex handing
-  // back a big non-incremental chunk) must decay smoothly — each
-  // successive tick's reveal shrinking roughly geometrically, never
-  // oscillating or jumping back up — with NO artificial per-tick ceiling
-  // (plan requirement: "no per-tick hard cap that causes visible stalls").
-  // A big sudden burst legitimately reveals proportionally more per tick
-  // than a small one; what must never happen is a discontinuous regime
-  // change like the old normal+boost formula had.
+  // back a big non-incremental chunk) must have NO effect on the per-tick
+  // reveal — under the ramp-over-time law the typewriter's speed depends
+  // only on elapsed reveal time, so the 4000 queued chars type out at the
+  // same accelerating pace a 40-char answer would start at: the reveal per
+  // tick only ever grows (±1 fractional carry), stays under the maxCps
+  // frame ceiling, and never jumps discontinuously when the burst lands.
   AiBackend.loadConfig(null)
+  const cfg = AiBackend.getConfig()
+  const perTickCeiling = Math.floor((cfg.maxCps * cfg.streamFlushMs) / 1000) + 1
   AiBackend.cancel()
   const g = AiBackend.beginGeneration("large burst test")
-  AiBackend.handleLine(g.generation, '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"AB"}}}') // tiny first chunk, immediate
+  AiBackend.handleLine(g.generation, '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"AB"}}}') // tiny first chunk, paced like everything else
   const burst = "Z".repeat(4000)
   AiBackend.handleLine(g.generation, JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: burst } } }))
 
-  var lastRevealed = Infinity
+  var lastRevealed = 0
   var ticks = 0
   var pending = AiBackend.snapshot().pendingText.length
   while (pending > 0 && ticks < 1000) {
     const before = AiBackend.snapshot().displayedText.length
-    const snap = AiBackend.tick()
+    AiBackend.tick() // null on a sub-character carry tick — always re-snapshot
+    const snap = AiBackend.snapshot()
     const revealed = snap.displayedText.length - before
-    // Monotonically non-increasing (a shrinking backlog under a fixed
-    // fractional law can only reveal the same or less each tick) — proves
-    // there's no discontinuous "boost kicks in" jump anywhere in the decay.
-    assert(revealed <= lastRevealed + 1, "tick " + ticks + " revealed MORE than the previous tick (" + revealed + " > " + lastRevealed + ") — a discontinuous jump, exactly the old bug")
-    lastRevealed = revealed
+    assert(revealed <= perTickCeiling, "tick " + ticks + " revealed " + revealed + " chars (>" + perTickCeiling + " = above the maxCps frame ceiling — the burst leaked into the reveal size)")
+    // Only ever accelerates (the final clamped-to-remainder tick exempt).
+    if (revealed > 0 && snap.pendingText.length > 0) {
+      assert(revealed >= lastRevealed - 1, "tick " + ticks + " revealed LESS than the previous tick (" + revealed + " < " + lastRevealed + " - 1) — the typewriter slowed down")
+      lastRevealed = revealed
+    }
     pending = snap.pendingText.length
     ticks++
   }
   eq(AiBackend.snapshot().displayedText.length, 2 + 4000, "the full burst is eventually revealed, nothing lost")
-  assert(ticks > 5, "a 4000-char sudden burst still takes multiple ticks to reveal — proportional, not instant (sanity)")
+  assert(ticks > 50, "a 4000-char sudden burst takes MANY ticks to type out — time-paced, never backlog-proportional (" + ticks + " ticks)")
 }
 
 {
-  // Bug found WHILE writing the P0-7 test above: an oversized FIRST chunk
-  // (e.g. an adapter — Codex's item.updated/completed — that can hand back
-  // its whole answer as a single "delta" the first time text is seen) would
-  // skip pendingText/pacing entirely via the "first chunk renders
-  // immediately" fast path, defeating burst normalization for exactly the
-  // case that needs it most. Only a small capped prefix of an oversized
-  // first chunk should render immediately; the rest must still be paced.
+  // An adapter that hands back its whole answer as a single first "delta"
+  // (Codex's item.updated/completed can) must not bypass pacing. There is
+  // no first-chunk immediate-flush fast path at all anymore (removed after
+  // live feedback that even an 80-char first-sentence flash reads as a
+  // burst): the ENTIRE delta waits in pendingText and the first character
+  // only appears via tick(), i.e. within one display frame, never zero.
   AiBackend.loadConfig(JSON.stringify({ streamFlushMs: 50, drainBaseCps: 60 }))
   AiBackend.cancel()
   const g = AiBackend.beginGeneration("oversized first chunk test")
@@ -763,10 +784,12 @@ for (const id of ["claude", "codex", "agy"]) {
   const snap = AiBackend.handleLine(g.generation, JSON.stringify({
     type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: wholeAnswerAsOneDelta } }
   }))
-  assert(snap.displayedText.length < snap.rawText.length,
-    "an oversized single first delta (500 chars) is NOT fully flushed to displayedText immediately — most of it is paced through pendingText")
-  assert(snap.displayedText.length > 0, "a small immediate prefix still renders right away for low perceived TTFC")
-  eq(snap.displayedText.length + snap.pendingText.length, snap.rawText.length, "no characters are lost between displayedText and pendingText")
+  eq(snap.displayedText.length, 0, "an oversized single first delta renders NOTHING synchronously — every character is paced")
+  eq(snap.pendingText.length, snap.rawText.length, "the whole delta waits in pendingText; no characters are lost")
+  AiBackend.tick() // first display frame (50ms at 60cps = 3 chars)
+  const afterFirstTick = AiBackend.snapshot()
+  assert(afterFirstTick.displayedText.length > 0, "the typewriter starts within ONE display frame — fast TTFC without a flash")
+  assert(afterFirstTick.displayedText.length < 20, "and it STARTS at the base typewriter pace, not with a burst")
 }
 
 {
@@ -778,9 +801,8 @@ for (const id of ["claude", "codex", "agy"]) {
   const g = AiBackend.beginGeneration("config snapshot test")
   AiBackend.handleLine(g.generation, '{"type":"system","subtype":"init","session_id":"snap-sess","cwd":"/"}')
   AiBackend.handleLine(g.generation, '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}}')
-  // "hi" lands via the first-chunk flush, so pendingText is already 0 at
-  // exit — use handleExit()'s own return (see the agy/handoff tests above).
-  let snap = AiBackend.handleExit(g.generation, 0)
+  AiBackend.handleExit(g.generation, 0)
+  let snap = drainToReady() // "hi" types out over a couple of Draining ticks
   eq(snap.modelLabel, "opus", "chip modelLabel reflects the config the session actually ran with")
 
   // ai.json changes mid-run (or between runs, before resume is clicked).

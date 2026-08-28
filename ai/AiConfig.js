@@ -9,22 +9,26 @@
 
 var SUPPORTED_AGENTS = ["claude", "codex", "agy"]
 
-// drainBaseCps / streamFlushMs tune the streaming "typewriter" reveal (see
-// ai/AiBackend.js's catchUpChars()/tick()): the actual reveal rate scales
-// continuously with how far behind the display is (a smooth exponential
-// catch-up, not a linear cps), so these are no longer "the" reveal speed —
+// The streaming "typewriter" reveal (see ai/AiBackend.js's tick()) is an
+// exponential RAMP over time — the rate never depends on how much text is
+// queued, so a burst from the CLI can never become a burst on screen:
+//   rate(t) = drainBaseCps * 2^(t / rampDoubleMs), capped at maxCps
 //   streamFlushMs: how often the display timer ticks. 16ms (60Hz) matches
 //     web-chat-app smoothness; lower means more, smaller, steadier updates.
-//   drainBaseCps: MINIMUM reveal rate floor (chars/sec) for when the
-//     backlog is thin — keeps a slow trickle of text from crawling at an
-//     imperceptible sub-character pace. Does not cap the top end at all;
-//     a sudden burst still reveals proportionally faster on its own.
+//   drainBaseCps: STARTING reveal rate (chars/sec) — the readable
+//     typewriter pace the answer begins at.
+//   rampDoubleMs: the reveal rate doubles every this-many ms of active
+//     reveal time (pauses with nothing to show don't advance the ramp).
+//   maxCps: rate ceiling — at 2400cps/60Hz that's ~38 chars per frame, a
+//     fast smooth scroll rather than a dump.
 var DEFAULT_CONFIG = {
   agent: "claude",
   model: null,
   prefix: "ai ",
   maxAnswerRows: 6,
   drainBaseCps: 60,
+  rampDoubleMs: 500,
+  maxCps: 2400,
   streamFlushMs: 16
 }
 
@@ -57,9 +61,19 @@ function coerceField(key, value) {
       if (isFinite(rows) && rows >= 1 && rows <= 40) return Math.round(rows)
       return undefined
     }
-    case "drainBaseCps": { // minimum reveal-rate floor, chars/sec — see DEFAULT_CONFIG comment
+    case "drainBaseCps": { // starting reveal rate, chars/sec — see DEFAULT_CONFIG comment
       var cps = Number(value)
       if (isFinite(cps) && cps > 0 && cps <= 10000) return cps
+      return undefined
+    }
+    case "rampDoubleMs": { // rate-doubling period, ms — see DEFAULT_CONFIG comment
+      var dbl = Number(value)
+      if (isFinite(dbl) && dbl >= 50 && dbl <= 10000) return Math.round(dbl)
+      return undefined
+    }
+    case "maxCps": { // reveal-rate ceiling, chars/sec — see DEFAULT_CONFIG comment
+      var top = Number(value)
+      if (isFinite(top) && top > 0 && top <= 100000) return top
       return undefined
     }
     case "streamFlushMs": { // display-timer tick interval, ms — see DEFAULT_CONFIG comment

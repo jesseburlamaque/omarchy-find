@@ -695,7 +695,7 @@ Item {
     else if (s.state === "starting") text += " · starting…"
     else if (s.state === "running") text += (s.activity === "searching" ? " · searching…" : " · thinking…")
     // Draining means the process already exited — the answer is fully known
-    // and just finishing its (now sub-second, see AiBackend.tick) catch-up
+    // and just finishing its (accelerated, see AiBackend.tick) typewriter
     // animation. "thinking…" here was misleading (QA P0-7).
     else if (s.state === "draining") text += " · finishing…"
     else if (s.state === "handoff") text += " · opening terminal…"
@@ -923,15 +923,15 @@ Item {
   }
 
   // Paced display drain (plan §17). Ticks at ~60Hz (16ms) by default so the
-  // catch-up-law reveal in AiBackend.tick() reads as continuous/smooth
+  // ramped-typewriter reveal in AiBackend.tick() reads as continuous/smooth
   // rather than the old 20Hz two-regime formula's visible chunky steps —
   // measured offline (qml6 -platform offscreen QQuickText benchmark, not
   // the live shell) that a 500+ word wrapped answer relayouts in ~1ms worst
   // case per update, so 60Hz has no perf headroom problem here. Runs only
   // while there's streaming to normalize; AiBackend.tick() returns null on
-  // an idle tick (nothing pending, nothing transitioned) so this only
-  // reassigns root.aiSession — and only then triggers a Text re-render —
-  // on ticks that actually revealed something.
+  // an idle tick (nothing pending or revealed, nothing transitioned) so
+  // this only reassigns root.aiSession — and only then triggers a Text
+  // re-render — on ticks that actually revealed something.
   Timer {
     id: aiDrainTimer
     interval: Math.max(8, root.aiStreamFlushMs)

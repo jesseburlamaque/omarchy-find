@@ -31,44 +31,33 @@ var State = {
 
 // ---------------------------------------------------------------- drain ---
 //
-// Streaming "typewriter" tuning (rewritten after live-overlay feedback: the
-// original two-regime normal+boost formula at 50ms/20Hz ticks produced
-// visibly chunky, bursty reveal — lag would build up then dump in one jump
-// once the bounded backlogBoost kicked in). The replacement is a single
-// continuous catch-up law — see catchUpChars() — driven by a much faster
-// tick (Find.qml's aiDrainTimer, ~16ms/60Hz) so reveal rate scales smoothly
-// with how far behind the display currently is: small backlog -> small
-// reveal, sudden CLI burst -> proportionally bigger reveal that same tick,
-// no separate "boost mode" to visibly kick in or stall out of.
+// Streaming "typewriter" law (third iteration, after live-overlay feedback
+// that BOTH previous formulas still burst: the backlog-proportional
+// catch-up revealed ~8% of whatever was pending per 16ms frame, so a large
+// CLI chunk — codex whole-item deltas, claude sentence-sized deltas landing
+// together — became a visible on-screen dump, and the old 300ms hard drain
+// deadline flooded the whole tail out the moment the process exited).
 //
-// DRAIN_HALF_LIFE_MS: each tick reveals a fraction `alpha` of whatever is
-// still pending, where alpha is derived (per actual tick interval, so this
-// stays correct even if a user's ai.json overrides the tick rate) so that
-// a backlog shrinks by half every DRAIN_HALF_LIFE_MS of real time. 130ms
-// (within the requested 120-180ms range) keeps typical perceived lag in the
-// ~200-300ms band that reads as "closely tracking the model" rather than
-// either an instant dump or a noticeable trail.
-var DRAIN_HALF_LIFE_MS = 130
+// The replacement is rate-over-TIME, never rate-over-backlog: the reveal
+// rate starts at a readable typewriter pace and grows EXPONENTIALLY with
+// how long the answer has been revealing, up to a smooth per-frame cap.
+// How much text is queued has zero effect on how much one tick shows, so a
+// burst from the CLI can never become a burst on screen — it only makes
+// the (accelerating) typewriter run longer. Total reveal time grows only
+// logarithmically with answer length, so no hard deadline is needed:
+//   rate(t) = drainBaseCps * 2^(t / rampDoubleMs), capped at maxCps
+// where t counts only ACTIVE reveal time (ticks that had pending text), so
+// a mid-answer thinking pause freezes the ramp instead of inflating it.
+// All three knobs live in AiConfig (ai.json-overridable): drainBaseCps=60
+// start, rampDoubleMs=500 doubling period, maxCps=2400 cap (~38 chars per
+// 16ms frame — a fast smooth scroll, not a dump).
 
-// A pure exponential decay has a long individually-slow tail once the
-// backlog gets small (each tick reveals a shrinking fraction of an already-
-// shrinking number), so the ~2-char floor mentioned in the original ask
-// would, on its own, spend a large chunk of the whole reveal time crawling
-// through the LAST ~20-30 characters at only 2/tick — verified by
-// simulating a real captured multi-chunk claude answer with a deliberate
-// same-tick burst (see the smoothness regression test): 2-char floor
-// pushed worst-case simulated lag to ~480-528ms, over budget. 4 chars/tick
-// (still small/imperceptible as a single-tick reveal) roughly halves that
-// tail cost and keeps worst-case lag comfortably under the ~400ms bar
-// without needing a shorter half-life than requested.
-var MIN_REVEAL_FLOOR_CHARS = 4
-
-// Once Draining starts (the process has already exited — the full answer is
-// fully known and nothing new is coming), the exponential catch-up law
-// above is combined with a hard wall-clock deadline so a very large backlog
-// can't ride the asymptote forever: the whole thing must be gone within
-// this many milliseconds of entering Draining, no matter its size.
-var DRAIN_MAX_MS = 300
+// Once Draining starts the process has already exited — the full answer is
+// known and nothing new is coming — so the ramp clock simply advances this
+// many times faster. The rate stays continuous across the transition and
+// keeps the same exponential shape; the tail just accelerates sooner
+// instead of ever being dumped by a deadline.
+var DRAIN_RAMP_ACCEL = 2
 
 var Activity = {
   None: null,
@@ -185,7 +174,11 @@ function beginGeneration(promptText) {
     continuity: adapter.capabilities.continuity,
     stderrText: "",
     prompt: promptText,
-    config: frozenConfig
+    config: frozenConfig,
+    // Typewriter ramp state (see tick()): active reveal time accumulated so
+    // far, and the fractional-character carry between ticks.
+    revealElapsedMs: 0,
+    revealCarry: 0
   }
   parserState = {}
 
@@ -265,30 +258,15 @@ function applyEvent(ev) {
   }
 }
 
-// Cap on how much of the FIRST chunk gets the immediate-render treatment.
-// Claude/agy stream small token-sized deltas so this never matters for
-// them, but Codex's adapter (and any future one) can hand back a whole
-// item's text as a single "delta" the first time it's seen — without this
-// cap, that entire answer would skip pendingText/drain pacing altogether
-// (the exact opposite of "burst normalization", plan §17).
-var FIRST_CHUNK_IMMEDIATE_MAX = 80
-
 function appendText(delta) {
   if (!delta || !session) return
+  // EVERY character goes through the paced typewriter in tick() — there is
+  // deliberately no first-chunk immediate-render fast path anymore (live
+  // feedback: even an 80-char "first sentence" flash reads as a burst, and
+  // the CLIs' first delta is often a whole sentence). TTFC is still ~one
+  // display tick (16ms) since the drain timer runs the whole time.
   session.rawText += delta
-  // First meaningful text renders immediately (minimum perceived TTFC);
-  // everything after — and anything beyond the cap even on the very first
-  // delta — goes through the paced drain in tick().
-  if (session.displayedText.length === 0 && session.pendingText.length === 0) {
-    if (delta.length <= FIRST_CHUNK_IMMEDIATE_MAX) {
-      session.displayedText += delta
-    } else {
-      session.displayedText += delta.slice(0, FIRST_CHUNK_IMMEDIATE_MAX)
-      session.pendingText += delta.slice(FIRST_CHUNK_IMMEDIATE_MAX)
-    }
-  } else {
-    session.pendingText += delta
-  }
+  session.pendingText += delta
 }
 
 function setError(message, kind) {
@@ -351,7 +329,6 @@ function handleExit(gen, exitCode) {
     setError(classification.message, classification.kind)
   } else {
     session.state = State.Draining
-    session.drainTicksElapsed = 0
     if (session.pendingText.length === 0) finishDraining()
   }
   return snapshot()
@@ -364,73 +341,52 @@ function finishDraining() {
 
 // -------------------------------------------------------------- drain -----
 
-// Single continuous catch-up law (replaces the old normal+boost two-regime
-// formula, which ticked at 20Hz and produced visibly chunky/bursty reveal —
-// lag would build up, then dump all at once once a hard per-tick cap capped
-// the "catch up" side unevenly). Reveal a fixed FRACTION of whatever is
-// still pending each tick, so the amount shown scales continuously with how
-// far behind the display is: a small backlog reveals a small amount, a
-// sudden CLI burst reveals proportionally more that same tick and melts
-// away over the next few ticks — never a separate "boost mode" visibly
-// kicking in or a hard cap causing a stall. `minCps` (config's
-// drainBaseCps, now meaning "minimum reveal rate") sets a floor so very
-// thin trickles of text don't slow to an imperceptible crawl.
-function catchUpChars(pendingLength, dtMs, minCps) {
-  if (pendingLength <= 0) return 0
-  var dt = Math.max(1, dtMs)
-  // Fraction of the remaining backlog to reveal this tick, derived from the
-  // ACTUAL tick interval so the real-time half-life stays DRAIN_HALF_LIFE_MS
-  // regardless of a configured streamFlushMs — halves the backlog every
-  // DRAIN_HALF_LIFE_MS of wall-clock time (a geometric/exponential decay,
-  // not a linear cap): alpha solves (1-alpha)^(dt/halfLife) = 0.5.
-  var alpha = 1 - Math.pow(0.5, dt / DRAIN_HALF_LIFE_MS)
-  var floorChars = Math.max(MIN_REVEAL_FLOOR_CHARS, Math.round((Math.max(1, minCps) * dt) / 1000))
-  var chars = Math.ceil(pendingLength * alpha)
-  if (chars < floorChars) chars = floorChars
-  if (chars > pendingLength) chars = pendingLength
-  return chars
+// Current reveal rate in chars/sec for a session that has spent
+// `elapsedMs` of active reveal time so far: exponential ramp from the
+// configured starting pace, doubling every rampDoubleMs, capped at maxCps.
+// Deliberately a function of TIME only — never of backlog size (see the
+// header comment above: backlog-proportional reveal is what burst).
+function rampRateCps(elapsedMs, cfg) {
+  var rate = cfg.drainBaseCps * Math.pow(2, elapsedMs / cfg.rampDoubleMs)
+  return rate < cfg.maxCps ? rate : cfg.maxCps
 }
 
-// Draining-only addition: the process has already exited — the full answer
-// is fully known and nothing new is coming — so on top of the same smooth
-// catchUpChars() law, a hard wall-clock deadline (DRAIN_MAX_MS) guarantees
-// even a very large backlog can't ride the exponential's asymptote forever.
-// Tracked as an elapsed-TICK count rather than a raw Date.now() deadline —
-// exact and deterministic regardless of system clock jitter, and testable
-// without real delays — but the tick budget itself is derived from
-// DRAIN_MAX_MS / the actual tick interval, so it stays correct if a user's
-// ai.json overrides streamFlushMs. Never slower than the base catch-up law
-// either (Math.max), so this only ever speeds up the tail of a big backlog.
-function drainingChars(pendingLength, dtMs, ticksElapsed, minCps) {
-  var dt = Math.max(1, dtMs)
-  var maxTicks = Math.max(1, Math.ceil(DRAIN_MAX_MS / dt))
-  var ticksLeft = Math.max(1, maxTicks - ticksElapsed)
-  var byDeadline = Math.ceil(pendingLength / ticksLeft)
-  var byRate = catchUpChars(pendingLength, dtMs, minCps)
-  return Math.min(pendingLength, Math.max(byDeadline, byRate))
-}
-
-// Called on a fixed timer (streamFlushMs, now meaning "tick interval",
-// default 16ms/60Hz — see AiConfig.js) while state is running/draining.
-// Returns null on a genuine no-op tick (nothing was pending, nothing
-// transitioned) so the caller can skip reassigning the QML-bound snapshot
-// property entirely on idle ticks (perf: avoid needless Text re-layout).
+// Called on a fixed timer (streamFlushMs = tick interval, default 16ms/60Hz
+// — see AiConfig.js) while state is running/draining. Returns null on a
+// tick that changed nothing visible (nothing pending, or the sub-character
+// carry hasn't accumulated a whole char yet) so the caller can skip
+// reassigning the QML-bound snapshot property (perf: avoid needless Text
+// re-layout).
 function tick() {
   if (!session) return null
   if (session.pendingText.length === 0) return null
-  var chars
-  if (session.state === State.Draining) {
-    chars = drainingChars(session.pendingText.length, runtimeConfig.streamFlushMs, session.drainTicksElapsed || 0, runtimeConfig.drainBaseCps)
-    session.drainTicksElapsed = (session.drainTicksElapsed || 0) + 1
-  } else {
-    chars = catchUpChars(session.pendingText.length, runtimeConfig.streamFlushMs, runtimeConfig.drainBaseCps)
+  var dt = Math.max(1, runtimeConfig.streamFlushMs)
+  var cfg = runtimeConfig
+  // Rate is sampled BEFORE advancing the clock so the very first active
+  // tick reveals at exactly drainBaseCps. `revealCarry` accumulates the
+  // fractional character per tick (60cps at 60Hz is <1 char/frame) so the
+  // slow start is smooth and no characters are gained or lost to rounding.
+  var exact = (rampRateCps(session.revealElapsedMs, cfg) * dt) / 1000 + session.revealCarry
+  var chars = Math.floor(exact)
+  session.revealCarry = exact - chars
+  if (chars > session.pendingText.length) {
+    chars = session.pendingText.length
+    session.revealCarry = 0
   }
+  // The ramp clock counts only ACTIVE reveal time (this branch is behind
+  // the pendingText check above), so mid-answer thinking pauses freeze the
+  // ramp rather than inflating it. Draining advances the clock faster —
+  // see DRAIN_RAMP_ACCEL — but through the same continuous law.
+  session.revealElapsedMs += dt * (session.state === State.Draining ? DRAIN_RAMP_ACCEL : 1)
   if (chars > 0) {
     session.displayedText += session.pendingText.slice(0, chars)
     session.pendingText = session.pendingText.slice(chars)
   }
-  if (session.state === State.Draining && session.pendingText.length === 0) finishDraining()
-  return snapshot()
+  if (session.state === State.Draining && session.pendingText.length === 0) {
+    finishDraining()
+    return snapshot()
+  }
+  return chars > 0 ? snapshot() : null
 }
 
 // ------------------------------------------------------------ lifecycle ---
