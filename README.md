@@ -10,6 +10,12 @@ A fast, elegant, keyboard-driven universal file search and quick launcher for th
 
 https://github.com/user-attachments/assets/771820df-2a80-4e5d-9aee-1f0e7b9f1159
 
+### AI Search Mode
+
+![AI Search Mode demo — ai question streams an answer, Enter resumes the session in a terminal](media/ai-demo.gif)
+
+Type `ai <question>` to stream an answer from your already-installed agent CLI — revealed as a smooth typewriter that starts instantly and speeds up exponentially as it goes — then press `Enter` to continue the *exact same* conversation in a terminal: no replay, no separate chat history. Full-quality captures per agent: [Claude Code](media/ai-demo-claude.mp4) · [Codex](media/ai-demo-codex.mp4) · [Antigravity](media/ai-demo-agy.mp4).
+
 ---
 
 ## About
@@ -24,6 +30,7 @@ Beyond simple file launching, it acts as a central productivity hub:
 - **Terminal Integration:** Spawn your preferred terminal directly inside the target directory (`Ctrl+T`).
 - **Clipboard Utility:** Instantly copy clean absolute paths to the clipboard (`Ctrl+C`).
 - **Web Search:** Type `go <terms>` to seamlessly perform an instant Google search in your default browser.
+- **AI Search Mode:** Type `ai <question>` to stream an answer from your installed Claude Code, Codex, or Antigravity CLI right in the overlay, then press `Enter` to resume the exact same session in a terminal.
 
 ---
 
@@ -40,6 +47,7 @@ Beyond simple file launching, it acts as a central productivity hub:
   - **Code:** Source files and scripts across all major programming languages.
 - **Instant Sorting Modes:** Switch on the fly between **Relevance**, **Most Recent**, **Oldest**, **Name (A → Z)**, and **Name (Z → A)** via single click or `Ctrl+S`.
 - **Quick Web Search:** Type `go <query>` to hide local file lists and open Google search directly in your browser.
+- **AI Search Mode:** Type `ai <question>` to get a streamed one-shot answer from your existing agent CLI (Claude Code by default; Codex and Antigravity also supported), with no API keys managed by this plugin — it's a thin frontend over whichever CLI you already have authenticated. `Enter` after the answer completes resumes the exact same agent session in a terminal, with no replay of your original prompt.
 - **Ergonomic Keyboard Navigation:** Full support for arrow keys, readline navigation (`Ctrl+N`/`Ctrl+P`), vim-style shortcuts (`Ctrl+J`/`Ctrl+K`), `Home`/`End`, and `PageUp`/`PageDown`.
 - **Status Bar Widget & CLI:** Includes a bar magnifier icon widget, a launcher desktop entry, and the `omarchy-find` CLI command.
 - **Native Shell Aesthetics:** Automatically follows active Omarchy themes, colors, and typography.
@@ -80,6 +88,7 @@ You can summon Omarchy Find in four convenient ways:
 | -------- | ----------- |
 | `Type` | Search files, folders and paths in real time |
 | `go <query>` | Instant Google Search in default browser |
+| `ai <question>` | Stream an answer from your agent CLI; `Enter` again resumes the same session in a terminal |
 | `↑ / ↓` | Navigate up / down through results |
 | `Ctrl+N / Ctrl+P` | Readline-style next / previous item navigation |
 | `Ctrl+J / Ctrl+K` | Vim-style next / previous item navigation |
@@ -95,6 +104,51 @@ You can summon Omarchy Find in four convenient ways:
 | `Ctrl+W` / `Ctrl+Backspace` | Delete previous word in search input |
 | `Ctrl+U` | Clear entire search query |
 | `Esc` | Clear query if typed, or close overlay if query is empty |
+
+### AI Search Mode
+
+Type `ai <question>` to ask your already-installed, already-authenticated agent CLI a question:
+
+```text
+ai explain why my systemd user service isn't starting
+```
+
+The answer streams into the overlay as it's generated, revealed as a typewriter that begins the instant the first token arrives and accelerates exponentially the longer it runs — long answers finish quickly, but nothing ever bursts onto the screen at once.
+
+While in AI mode:
+
+| Key | Action |
+| --- | ------ |
+| `Enter` (after the answer completes) | Open a terminal that **resumes the exact same agent session** — nothing is replayed, no chat history is invented by this plugin |
+| `Ctrl+C` | Copy the full answer text to the clipboard |
+| `Esc` | Cancel the request and close — no agent process is left running |
+
+### Supported agents & models
+
+| Agent | `agent` value | Model override examples |
+| ----- | ------------- | ----------------------- |
+| **Claude Code** (default) | `claude` | `"opus"`, `"sonnet"`, `"haiku"` |
+| **Codex** | `codex` | `"gpt-5-codex"` |
+| **Antigravity** | `agy` | any model id the `agy` CLI accepts |
+
+The `model` value is passed straight through to the CLI as `--model <value>`, so anything your CLI accepts works; leave it `null` to use the CLI's own default. Omarchy Find never manages API keys or does its own inference — it only shells out to whichever CLI is already installed and authenticated on your machine.
+
+To change the agent or tune streaming behavior, create `~/.config/omarchy-find/ai.json` (this file is optional and is never created automatically):
+
+```json
+{
+  "agent": "claude",
+  "model": null,
+  "prefix": "ai ",
+  "maxAnswerRows": 6,
+  "drainBaseCps": 60,
+  "rampDoubleMs": 500,
+  "maxCps": 2400,
+  "streamFlushMs": 16
+}
+```
+
+See `share/ai.json.example` for a copy of the same defaults. `agent` is one of `claude`, `codex`, or `agy`; `model` overrides the CLI's default model when set; `prefix` changes the trigger word from `ai `. The streamed answer is revealed as a typewriter that speeds up exponentially the longer it runs (never as a function of how much text is queued, so a burst from the CLI never dumps onto the screen at once): it starts at `drainBaseCps` characters/second, doubles every `rampDoubleMs` milliseconds of active reveal, and tops out at `maxCps`. `streamFlushMs` is how often the reveal redraws (default 16ms/60Hz, for a smooth continuous animation).
 
 ---
 
