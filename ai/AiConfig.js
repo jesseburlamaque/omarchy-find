@@ -89,14 +89,26 @@ function coerceField(key, value) {
 // Merge raw ai.json text (or null/undefined/empty when absent) onto the
 // compiled defaults. Never throws. Always returns a fully-populated config.
 //
+// omarchyAgent: the raw text content of ~/.config/omarchy/defaults/agent,
+// read by Find.qml. Used as fallback when ai.json doesn't specify an agent.
+//
 // Returns { config, warning } where warning is a short human-readable string
 // (or null). A warning never blocks startup and the source file is never
 // touched, per the plan's "invalid config" rule.
-function mergeConfig(rawText) {
+function mergeConfig(rawText, omarchyAgent) {
   var config = defaults()
 
   var trimmed = (rawText === null || rawText === undefined) ? "" : String(rawText).trim()
+  var agentSetInJson = false
+
   if (trimmed.length === 0) {
+    // No ai.json — use Omarchy default agent if available and supported.
+    var oa = String(omarchyAgent || "").split("\n")[0].trim().toLowerCase()
+    if (oa && SUPPORTED_AGENTS.indexOf(oa) !== -1) {
+      config.agent = oa
+    }
+    // If oa is set but not in SUPPORTED_AGENTS, AiBackend will show a clear
+    // "does not yet support headless AI mode" message — no warning needed here.
     return { config: config, warning: null }
   }
 
@@ -122,8 +134,18 @@ function mergeConfig(rawText) {
       continue
     }
     config[key] = coerced
+    if (key === "agent") agentSetInJson = true
   }
   // Unknown top-level fields are silently ignored for forwards compatibility.
+
+  // If ai.json exists but doesn't specify an agent, fall back to the Omarchy
+  // default agent — same logic as the "no ai.json" path above.
+  if (!agentSetInJson) {
+    var oa2 = String(omarchyAgent || "").split("\n")[0].trim().toLowerCase()
+    if (oa2 && SUPPORTED_AGENTS.indexOf(oa2) !== -1) {
+      config.agent = oa2
+    }
+  }
 
   var warning = null
   if (invalidFields.length > 0) {
@@ -147,3 +169,4 @@ function mergeConfig(rawText) {
   }
   return { config: config, warning: warning }
 }
+

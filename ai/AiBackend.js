@@ -76,8 +76,8 @@ var parserState = null   // adapter-owned scratch space for the active session
 // Never writes/creates the config file — purely reads whatever text is handed in.
 // Returns { config, warning }; the caller (Find.qml) is the one that keeps
 // hold of `warning` for display — nothing here needs to remember it.
-function loadConfig(rawText) {
-  var result = AiConfig.mergeConfig(rawText)
+function loadConfig(rawText, omarchyAgent) {
+  var result = AiConfig.mergeConfig(rawText, omarchyAgent)
   runtimeConfig = result.config
   return result
 }
@@ -137,6 +137,18 @@ function beginGeneration(promptText) {
   var frozenConfig = runtimeConfig
 
   if (!adapter) {
+    // Give a targeted hint for agents the user has set via Omarchy's own
+    // default-agent system but that don't yet have a headless adapter here.
+    // This is far better UX than a generic "unsupported agent" error that
+    // implies the user made a mistake in ai.json.
+    var knownOmarchyAgents = ["opencode", "gemini", "copilot", "grok", "pi", "omp", "crush"]
+    var isKnownOmarchy = knownOmarchyAgents.indexOf(runtimeConfig.agent) !== -1
+    var errorMsg = isKnownOmarchy
+      ? runtimeConfig.agent + " does not yet support headless AI mode. " +
+        "Switch your Omarchy agent to claude or codex, or create " +
+        "~/.config/omarchy-find/ai.json with {\"agent\": \"claude\"} or {\"agent\": \"agy\"}."
+      : "Unsupported agent \"" + runtimeConfig.agent + "\" — check ai.json. " +
+        "Supported agents: claude, codex, agy."
     session = {
       generation: gen,
       adapterId: runtimeConfig.agent,
@@ -147,7 +159,7 @@ function beginGeneration(promptText) {
       rawText: "", displayedText: "", pendingText: "",
       startedAt: Date.now(),
       canHandoff: false,
-      errorMessage: "Unsupported agent \"" + runtimeConfig.agent + "\" in ai.json",
+      errorMessage: errorMsg,
       errorKind: "config",
       continuity: "none",
       stderrText: "",

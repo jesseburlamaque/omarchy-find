@@ -453,7 +453,7 @@ Item {
   function activateIndex(index) {
     if (index < 0 || index >= displayModel.count) return
     var row = displayModel.get(index)
-    root.dismiss()
+    if (!root.isAiMode) root.dismiss()
     root.openPath(row.path)
   }
 
@@ -477,7 +477,7 @@ Item {
     var row = displayModel.get(index)
     root.dismiss()
     var target = row.isDir ? row.path : (row.path.slice(0, row.path.lastIndexOf("/")) || root.home)
-    Quickshell.execDetached(["bash", "-c", "cd " + Util.shellQuote(target) + " && (xdg-terminal-exec || omarchy-default-terminal || $TERMINAL || kitty || foot || alacritty)"])
+    Quickshell.execDetached(["bash", "-lc", "cd " + Util.shellQuote(target) + " && (xdg-terminal-exec || omarchy-default-terminal || $TERMINAL || kitty || foot || alacritty)"])
   }
 
   // AI search mode ---------------------------------------------------------
@@ -497,7 +497,8 @@ Item {
   function applyAiConfig(rawText) {
     if (root.aiConfigLoaded && rawText === root.aiConfigLastRawText) return // unchanged — no-op
     root.aiConfigLastRawText = rawText
-    var result = AiBackend.loadConfig(rawText)
+    var omarchyAgent = omarchyAgentFile.text ? omarchyAgentFile.text().trim() : ""
+    var result = AiBackend.loadConfig(rawText, omarchyAgent)
     root.aiConfigLoaded = true
     root.aiConfigWarning = result.warning || ""
     var cfg = AiBackend.getConfig()
@@ -820,6 +821,20 @@ Item {
     printErrors: false
     onLoaded: root.applyAiConfig(text())
     onLoadFailed: root.applyAiConfig(null)
+    onFileChanged: reload()
+  }
+
+  // Reads ~/.config/omarchy/defaults/agent — the user's Omarchy-wide default
+  // AI agent — and passes it to applyAiConfig() as a fallback when ai.json
+  // does not specify an agent. Hot-reloaded automatically if the user switches
+  // their Omarchy agent while the overlay is open (unlikely but free).
+  FileView {
+    id: omarchyAgentFile
+    path: root.home + "/.config/omarchy/defaults/agent"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyAiConfig(aiConfigFile.text ? aiConfigFile.text() : null)
+    onLoadFailed: root.applyAiConfig(aiConfigFile.text ? aiConfigFile.text() : null)
     onFileChanged: reload()
   }
 
