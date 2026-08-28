@@ -366,11 +366,13 @@ Item {
     resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
   }
 
-  // Prefer gio (honors Terminal=true .desktop entries by launching them
-  // inside a terminal), falling back to xdg-open when gio is unavailable.
+  // Prefer gio open (which honors Terminal=true .desktop entries, launching
+  // TUI apps like nvim inside the user's configured terminal emulator) over
+  // xdg-open, which always execs the target command directly and silently
+  // fails for terminal-based apps. Falls back to xdg-open if gio is absent.
   function openPath(path) {
     var quoted = Util.shellQuote(path)
-    Quickshell.execDetached(["bash", "-c",
+    Quickshell.execDetached(["bash", "-lc",
       "command -v gio >/dev/null 2>&1 && exec gio open " + quoted + " || exec xdg-open " + quoted])
   }
 
