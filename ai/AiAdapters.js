@@ -411,7 +411,7 @@ var opencodeAdapter = {
     if (config && config.model) {
       return ["opencode", "run", "--format", "json", "--model", config.model, prompt]
     }
-    var script = 'M=$(sqlite3 ~/.local/share/opencode/opencode.db "SELECT json_extract(model, \'$.providerID\') || \'/\' || json_extract(model, \'$.id\') FROM session WHERE model IS NOT NULL ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null); if [ -n "$M" ]; then exec opencode run --format json --model "$M" "$1"; else exec opencode run --format json "$1"; fi'
+    var script = 'M=$(sqlite3 ~/.local/share/opencode/opencode.db "SELECT json_extract(model, \'$.providerID\') || \'/\' || json_extract(model, \'$.id\') FROM session WHERE model IS NOT NULL ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null); case "$M" in *[!A-Za-z0-9/_.-]*) M="";; esac; if [ -n "$M" ]; then exec opencode run --format json --model "$M" "$1"; else exec opencode run --format json "$1"; fi'
     return ["sh", "-c", script, "sh", prompt]
   },
 
