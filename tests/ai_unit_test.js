@@ -151,7 +151,7 @@ function drainToReady(maxTicks) {
 
 // argv safety: prompt must always be a single literal argv element, never
 // concatenated into another string, for every adapter.
-for (const id of ["claude", "codex", "agy"]) {
+for (const id of ["claude", "codex", "agy", "opencode"]) {
   const adapter = AiAdapters.get(id)
   assert(adapter !== null, "adapter registered: " + id)
   const nasty = "\"'; $(echo hi) `uname` | ; \n中文 🚀"
@@ -272,8 +272,41 @@ for (const id of ["claude", "codex", "agy"]) {
 }
 
 {
+  // OpenCode adapter tests
+  const adapter = AiAdapters.get("opencode")
+  assert(adapter !== null, "opencode adapter registered")
+  const argv = adapter.buildRun("hello", null, AiConfig.defaults())
+  assert(Array.isArray(argv) && argv.indexOf("hello") !== -1, "opencode buildRun contains prompt")
+  const argvExplicit = adapter.buildRun("hello", null, { model: "opencode/hy3-free" })
+  assert(argvExplicit.indexOf("--model") !== -1 && argvExplicit.indexOf("opencode/hy3-free") !== -1, "opencode buildRun with explicit model includes --model")
+
+  const ps = {}
+  let text = ""
+  let sawSession = null
+  let sawActivity = null
+  const lines = [
+    '{"type":"step_start","timestamp":1787950029880,"sessionID":"ses_12345"}',
+    '{"type":"text","timestamp":1787950030080,"sessionID":"ses_12345","part":{"type":"text","text":"Hello"}}',
+    '{"type":"text","timestamp":1787950030090,"sessionID":"ses_12345","part":{"type":"text","text":"Hello world"}}'
+  ]
+  for (const line of lines) {
+    for (const ev of adapter.parseLine(line, ps)) {
+      if (ev.type === "text") text += ev.text
+      if (ev.type === "session") sawSession = ev.sessionRef
+      if (ev.type === "activity") sawActivity = ev.activity
+    }
+  }
+  eq(sawSession, "ses_12345", "opencode adapter captures sessionID")
+  eq(sawActivity, "thinking", "opencode adapter handles step_start activity")
+  eq(text, "Hello world", "opencode adapter computes incremental deltas correctly for part.text shape")
+
+  const cls = adapter.classifyFailure(1, "Error: Insufficient balance. Manage your billing here")
+  assert(cls && cls.kind === "quota", "opencode classifyFailure recognizes quota / balance error")
+}
+
+{
   // Malformed JSON / unknown event types must never throw for any adapter.
-  for (const id of ["claude", "codex", "agy"]) {
+  for (const id of ["claude", "codex", "agy", "opencode"]) {
     const adapter = AiAdapters.get(id)
     let threw = false
     try {

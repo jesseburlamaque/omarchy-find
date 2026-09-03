@@ -141,14 +141,14 @@ function beginGeneration(promptText) {
     // default-agent system but that don't yet have a headless adapter here.
     // This is far better UX than a generic "unsupported agent" error that
     // implies the user made a mistake in ai.json.
-    var knownOmarchyAgents = ["opencode", "gemini", "copilot", "grok", "pi", "omp", "crush"]
+    var knownOmarchyAgents = ["gemini", "copilot", "grok", "pi", "omp", "crush"]
     var isKnownOmarchy = knownOmarchyAgents.indexOf(runtimeConfig.agent) !== -1
     var errorMsg = isKnownOmarchy
       ? runtimeConfig.agent + " does not yet support headless AI mode. " +
-        "Switch your Omarchy agent to claude or codex, or create " +
-        "~/.config/omarchy-find/ai.json with {\"agent\": \"claude\"} or {\"agent\": \"agy\"}."
+        "Switch your Omarchy agent to claude, codex, or opencode, or create " +
+        "~/.config/omarchy-find/ai.json with {\"agent\": \"opencode\"}."
       : "Unsupported agent \"" + runtimeConfig.agent + "\" — check ai.json. " +
-        "Supported agents: claude, codex, agy."
+        "Supported agents: claude, codex, agy, opencode."
     session = {
       generation: gen,
       adapterId: runtimeConfig.agent,

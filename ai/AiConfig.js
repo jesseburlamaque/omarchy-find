@@ -7,7 +7,7 @@
 // (or null/undefined when the file does not exist) and we hand back a
 // complete, valid runtime config plus an optional short warning string.
 
-var SUPPORTED_AGENTS = ["claude", "codex", "agy"]
+var SUPPORTED_AGENTS = ["claude", "codex", "agy", "opencode"]
 
 // The streaming "typewriter" reveal (see ai/AiBackend.js's tick()) is an
 // exponential RAMP over time — the rate never depends on how much text is

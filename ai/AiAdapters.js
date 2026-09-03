@@ -392,12 +392,112 @@ var agyAdapter = {
   }
 }
 
+// --------------------------------------------------------------- OpenCode ---
+
+var opencodeAdapter = {
+  id: "opencode",
+  label: "OpenCode",
+  binary: "opencode",
+  capabilities: {
+    continuity: "returned-id",
+    modelOverride: true,
+    webSearchDetection: true,
+    resumeBeforeExit: false
+  },
+
+  createSessionRef: function() { return null },
+
+  buildRun: function(prompt, sessionRef, config) {
+    if (config && config.model) {
+      return ["opencode", "run", "--format", "json", "--model", config.model, prompt]
+    }
+    var script = 'M=$(sqlite3 ~/.local/share/opencode/opencode.db "SELECT json_extract(model, \'$.providerID\') || \'/\' || json_extract(model, \'$.id\') FROM session WHERE model IS NOT NULL ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null); if [ -n "$M" ]; then exec opencode run --format json --model "$M" "$1"; else exec opencode run --format json "$1"; fi'
+    return ["sh", "-c", script, "sh", prompt]
+  },
+
+  buildResume: function(sessionRef, config) {
+    if (config && config.model) {
+      return ["opencode", "run", "-s", sessionRef, "--model", config.model]
+    }
+    var script = 'M=$(sqlite3 ~/.local/share/opencode/opencode.db "SELECT json_extract(model, \'$.providerID\') || \'/\' || json_extract(model, \'$.id\') FROM session WHERE model IS NOT NULL ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null); if [ -n "$M" ]; then exec opencode run -s "$1" --model "$M"; else exec opencode run -s "$1"; fi'
+    return ["sh", "-c", script, "sh", sessionRef]
+  },
+
+  parseLine: function(line, ps) {
+    var obj = safeParse(line)
+    if (obj === undefined || obj === null || typeof obj !== "object") return []
+    var events = []
+
+    if (typeof obj.sessionID === "string" && obj.sessionID.length > 0 && !ps.sessionCaptured) {
+      ps.sessionCaptured = true
+      events.push({ type: "session", sessionRef: obj.sessionID })
+    }
+
+    if (obj.type === "step_start") {
+      events.push({ type: "activity", activity: "thinking" })
+    } else if (obj.type === "message.part.updated" && obj.properties && obj.properties.part) {
+      var part = obj.properties.part
+      if (part.type === "text" && typeof part.text === "string") {
+        var full = part.text
+        var prevLen = ps.lastTextLen || 0
+        if (full.length > prevLen) {
+          var delta = full.slice(prevLen)
+          ps.lastTextLen = full.length
+          events.push({ type: "text", text: delta })
+          ps.finalText = full
+        }
+      } else if (part.type === "web_search" || part.type === "tool") {
+        events.push({ type: "tool", tool: "web_search" })
+        events.push({ type: "activity", activity: "searching" })
+      }
+    } else if (obj.type === "text") {
+      var textVal = (obj.part && typeof obj.part.text === "string")
+        ? obj.part.text
+        : (typeof obj.text === "string" ? obj.text : "")
+      if (textVal.length > 0) {
+        var prevLen = ps.lastTextLen || 0
+        if (textVal.length > prevLen) {
+          var delta = textVal.slice(prevLen)
+          ps.lastTextLen = textVal.length
+          events.push({ type: "text", text: delta })
+          ps.finalText = textVal
+        } else if (prevLen === 0) {
+          events.push({ type: "text", text: textVal })
+          ps.lastTextLen = textVal.length
+          ps.finalText = textVal
+        }
+      }
+    } else if (obj.type === "error") {
+      var msg = (obj.error && obj.error.data && obj.error.data.message) ||
+                (obj.error && obj.error.message) ||
+                (typeof obj.error === "string" && obj.error) ||
+                "OpenCode reported an error"
+      events.push({ type: "error", message: String(msg) })
+    }
+    return events
+  },
+
+  classifyFailure: function(exitCode, stderrText) {
+    var s = String(stderrText || "")
+    var lower = s.toLowerCase()
+    if (lower.indexOf("insufficient balance") !== -1 || lower.indexOf("billing") !== -1 || lower.indexOf("quota") !== -1) {
+      return { message: "OpenCode usage limit reached", kind: "quota" }
+    }
+    if (lower.indexOf("not logged in") !== -1 || lower.indexOf("unauthorized") !== -1 || lower.indexOf("authentication") !== -1) {
+      return { message: "OpenCode authentication required", kind: "auth" }
+    }
+    return classifyGeneric(s)
+  }
+}
+
 var ADAPTERS = {
   claude: claudeAdapter,
   codex: codexAdapter,
-  agy: agyAdapter
+  agy: agyAdapter,
+  opencode: opencodeAdapter
 }
 
 function get(id) {
   return ADAPTERS[id] || null
 }
+
