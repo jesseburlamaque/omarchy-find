@@ -44,6 +44,7 @@ Item {
   // Timer firing when nothing actually changed) as a genuine no-op instead
   // of re-touching aiSession/binary-check on every firing.
   property var aiConfigLastRawText: undefined
+  property var aiConfigLastOmarchyAgent: undefined
   property int aiStreamFlushMs: 16
   property int aiMaxAnswerRows: 6
   property bool aiBinaryChecked: false
@@ -495,9 +496,12 @@ Item {
   // so a live reload here only ever affects the NEXT submit/resume, never
   // an in-flight one.
   function applyAiConfig(rawText) {
-    if (root.aiConfigLoaded && rawText === root.aiConfigLastRawText) return // unchanged — no-op
+    var omarchyAgent = (omarchyAgentFile && typeof omarchyAgentFile.text === "function")
+      ? omarchyAgentFile.text().trim()
+      : ""
+    if (root.aiConfigLoaded && rawText === root.aiConfigLastRawText && omarchyAgent === root.aiConfigLastOmarchyAgent) return // unchanged — no-op
     root.aiConfigLastRawText = rawText
-    var omarchyAgent = omarchyAgentFile.text ? omarchyAgentFile.text().trim() : ""
+    root.aiConfigLastOmarchyAgent = omarchyAgent
     var result = AiBackend.loadConfig(rawText, omarchyAgent)
     root.aiConfigLoaded = true
     root.aiConfigWarning = result.warning || ""
@@ -833,8 +837,8 @@ Item {
     path: root.home + "/.config/omarchy/defaults/agent"
     watchChanges: true
     printErrors: false
-    onLoaded: root.applyAiConfig(aiConfigFile.text ? aiConfigFile.text() : null)
-    onLoadFailed: root.applyAiConfig(aiConfigFile.text ? aiConfigFile.text() : null)
+    onLoaded: root.applyAiConfig((aiConfigFile && typeof aiConfigFile.text === "function") ? aiConfigFile.text() : null)
+    onLoadFailed: root.applyAiConfig((aiConfigFile && typeof aiConfigFile.text === "function") ? aiConfigFile.text() : null)
     onFileChanged: reload()
   }
 
@@ -843,7 +847,10 @@ Item {
     interval: 5000
     repeat: true
     running: true
-    onTriggered: aiConfigFile.reload()
+    onTriggered: {
+      aiConfigFile.reload()
+      omarchyAgentFile.reload()
+    }
   }
 
   // Single shared `which` check. checkingFor + the reuse guard in
@@ -1067,15 +1074,17 @@ Item {
     BorderSurface {
       id: card
       width: root.cardWidth
+      readonly property int aiMaxBoxHeight: Math.max(0, root.cardHeight - root.headerHeight - root.aiChipRowHeight - footer.implicitHeight - root.contentSpacing * 3 - card.contentTopInset - card.contentBottomInset)
+      readonly property int aiBoxHeight: (root.aiSession && root.aiSession.state !== "idle" && aiAnswerText.text.length > 0)
+        ? Math.min(card.aiMaxBoxHeight, aiAnswerText.implicitHeight + Style.spacing.sm * 2)
+        : 0
       height: root.expanded
         ? (root.isGoogleSearch
             ? (root.googleSearchTerms !== ""
                 ? (root.headerHeight + root.rowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset)
                 : (root.headerHeight + card.contentTopInset + card.contentBottomInset))
             : root.isAiMode
-              ? (root.aiSession && root.aiSession.state !== "idle"
-                  ? (root.headerHeight + root.aiChipRowHeight + root.aiAnswerMaxHeight + footer.implicitHeight + root.contentSpacing * 3 + card.contentTopInset + card.contentBottomInset)
-                  : (root.headerHeight + root.aiChipRowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset))
+              ? (root.headerHeight + root.aiChipRowHeight + card.aiBoxHeight + footer.implicitHeight + (card.aiBoxHeight > 0 ? root.contentSpacing * 3 : root.contentSpacing * 2) + card.contentTopInset + card.contentBottomInset)
               : root.cardHeight)
         : root.headerHeight + card.contentTopInset + card.contentBottomInset
       radius: root.cornerRadius
@@ -1152,16 +1161,38 @@ Item {
             if (!root.isAiMode) root.openInTerminal(root.selectedIndex)
             event.accepted = true
           } else if (event.key === Qt.Key_Up || (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_P || event.key === Qt.Key_K))) {
-            root.select(-1)
+            if (root.isAiMode) {
+              aiAnswerFlick.pinnedToBottom = false
+              aiAnswerFlick.contentY = Math.max(0, aiAnswerFlick.contentY - root.aiLineHeight * 2)
+            } else {
+              root.select(-1)
+            }
             event.accepted = true
           } else if (event.key === Qt.Key_Down || (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_N || event.key === Qt.Key_J))) {
-            root.select(1)
+            if (root.isAiMode) {
+              var maxY = Math.max(0, aiAnswerFlick.contentHeight - aiAnswerFlick.height)
+              aiAnswerFlick.contentY = Math.min(maxY, aiAnswerFlick.contentY + root.aiLineHeight * 2)
+              if (aiAnswerFlick.contentY >= maxY - 4) aiAnswerFlick.pinnedToBottom = true
+            } else {
+              root.select(1)
+            }
             event.accepted = true
           } else if (event.key === Qt.Key_PageUp) {
-            root.selectPage(-1)
+            if (root.isAiMode) {
+              aiAnswerFlick.pinnedToBottom = false
+              aiAnswerFlick.contentY = Math.max(0, aiAnswerFlick.contentY - aiAnswerFlick.height)
+            } else {
+              root.selectPage(-1)
+            }
             event.accepted = true
           } else if (event.key === Qt.Key_PageDown) {
-            root.selectPage(1)
+            if (root.isAiMode) {
+              var maxPageY = Math.max(0, aiAnswerFlick.contentHeight - aiAnswerFlick.height)
+              aiAnswerFlick.contentY = Math.min(maxPageY, aiAnswerFlick.contentY + aiAnswerFlick.height)
+              if (aiAnswerFlick.contentY >= maxPageY - 4) aiAnswerFlick.pinnedToBottom = true
+            } else {
+              root.selectPage(1)
+            }
             event.accepted = true
           } else if (event.key === Qt.Key_Home) {
             if (displayModel.count > 0) {
@@ -1390,8 +1421,8 @@ Item {
           id: aiPanel
           visible: root.expanded && root.isAiMode
           width: parent.width
-          height: (root.aiSession && root.aiSession.state !== "idle")
-            ? (root.aiChipRowHeight + root.contentSpacing + root.aiAnswerMaxHeight)
+          height: (root.aiSession && root.aiSession.state !== "idle" && card.aiBoxHeight > 0)
+            ? (root.aiChipRowHeight + root.contentSpacing + card.aiBoxHeight)
             : root.aiChipRowHeight
 
           Row {
@@ -1433,11 +1464,11 @@ Item {
 
           Rectangle {
             id: aiAnswerBox
-            visible: root.aiSession && root.aiSession.state !== "idle"
+            visible: root.aiSession && root.aiSession.state !== "idle" && card.aiBoxHeight > 0
             anchors.top: aiChipRow.bottom
             anchors.topMargin: root.contentSpacing
             width: parent.width
-            height: root.aiAnswerMaxHeight
+            height: card.aiBoxHeight
             radius: root.cornerRadius
             color: root.chipIdle
 
@@ -1479,7 +1510,8 @@ Item {
                     ? s.displayedText + "\n\n⚠ " + msg
                     : msg
                 }
-                textFormat: Text.PlainText
+                textFormat: Text.MarkdownText
+                onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                 wrapMode: Text.Wrap
                 // Only redden the whole block when there's nothing but the
                 // error to show — a retained partial answer should read as
