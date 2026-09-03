@@ -53,18 +53,36 @@ Type `ai <question>` in the search overlay to stream answers from your preferred
 
 ### Automatic Agent Detection
 
-By default, Omarchy Find automatically detects and uses the default AI agent configured in your Omarchy system (`omarchy default agent` / `~/.config/omarchy/defaults/agent`).
+By default, Omarchy Find automatically detects and uses the default AI agent configured in your Omarchy system (`~/.config/omarchy/defaults/agent`).
 
 | Omarchy Default Agent | AI Search Mode Status |
 |---|---|
+| **Antigravity** (`agy`) | ✅ Fully supported (automatic streaming & terminal handoff) |
+| **OpenCode** (`opencode`) | ✅ Fully supported (automatic streaming & terminal handoff) |
 | **Claude Code** (`claude`) | ✅ Fully supported (automatic streaming & terminal handoff) |
 | **Codex** (`codex`) | ✅ Fully supported (automatic streaming & terminal handoff) |
-| **Antigravity** (`agy`) | ✅ Fully supported via `ai.json` configuration |
-| **OpenCode** (`opencode`) | ⏳ Displays guidance message (headless mode coming soon) |
+
+#### Setting the Omarchy Default Agent
+
+You can set your default agent using the Omarchy CLI or directly via shell:
+
+- **Set to Antigravity (`agy`):**
+  ```sh
+  echo "agy" > ~/.config/omarchy/defaults/agent
+  ```
+- **Set to OpenCode (`opencode`):**
+  ```sh
+  echo "opencode" > ~/.config/omarchy/defaults/agent
+  ```
+  *(Or via `omarchy default agent opencode`)*
+
+Omarchy Find hot-reloads this change live in real time without requiring a shell restart.
+
+---
 
 ### Configuring an Agent Override (`ai.json`)
 
-To override the default agent specifically for Omarchy Find (for example, to use **Antigravity** while keeping OpenCode as your primary terminal agent), create `~/.config/omarchy-find/ai.json`:
+If you wish to use a different agent specifically inside Omarchy Find (for example, using **Antigravity** for fast desktop searches while keeping OpenCode as your primary terminal coding agent), you can create an override file in `~/.config/omarchy-find/ai.json`:
 
 ```json
 {
@@ -72,12 +90,14 @@ To override the default agent specifically for Omarchy Find (for example, to use
 }
 ```
 
+> **Note:** Any `"agent"` value defined in `ai.json` acts as an **explicit override** and takes precedence over `~/.config/omarchy/defaults/agent`.
+
 #### Available Fields (All Optional)
 
 ```json
 {
-  "agent": "agy",          // "claude" | "codex" | "agy"
-  "model": null,           // Override model string (e.g. "claude-3-5-sonnet") or null for CLI default
+  "agent": "agy",          // "agy" | "opencode" | "claude" | "codex"
+  "model": null,           // Override model string (e.g. "opencode-go/qwen3.8-flash") or null for CLI default
   "prefix": "ai ",         // Trigger prefix in the overlay
   "maxAnswerRows": 6       // Maximum visible answer lines before scrolling
 }
@@ -85,13 +105,17 @@ To override the default agent specifically for Omarchy Find (for example, to use
 
 The plugin hot-reloads config changes live without requiring a shell restart.
 
-### Returning to the System Default Agent
+### Returning to the System Default Agent (Removing Override)
 
-To switch back to your system-wide Omarchy default agent:
-- **Delete the override file:** `rm ~/.config/omarchy-find/ai.json`
-- **Or remove the `"agent"` key:** Leave `ai.json` without an `"agent"` field.
+If you previously edited `ai.json` manually and want Omarchy Find to go back to following your Omarchy default agent (`~/.config/omarchy/defaults/agent`):
 
-Omarchy Find will immediately detect the change and resume using your Omarchy default agent (`~/.config/omarchy/defaults/agent`).
+- **Delete the override file:**
+  ```sh
+  rm ~/.config/omarchy-find/ai.json
+  ```
+- **Or remove the `"agent"` key:** Keep other custom fields (like `"prefix"`) in `ai.json` but delete the `"agent"` line.
+
+Omarchy Find will immediately detect the change and resume using whichever agent is configured in `~/.config/omarchy/defaults/agent`.
 
 ---
 
