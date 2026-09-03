@@ -416,11 +416,9 @@ var opencodeAdapter = {
   },
 
   buildResume: function(sessionRef, config) {
-    if (config && config.model) {
-      return ["opencode", "run", "-s", sessionRef, "--model", config.model]
-    }
-    var script = 'M=$(sqlite3 ~/.local/share/opencode/opencode.db "SELECT json_extract(model, \'$.providerID\') || \'/\' || json_extract(model, \'$.id\') FROM session WHERE model IS NOT NULL ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null); if [ -n "$M" ]; then exec opencode run -s "$1" --model "$M"; else exec opencode run -s "$1"; fi'
-    return ["sh", "-c", script, "sh", sessionRef]
+    var argv = ["opencode", "--session", sessionRef]
+    if (config && config.model) argv.push("--model", config.model)
+    return argv
   },
 
   parseLine: function(line, ps) {

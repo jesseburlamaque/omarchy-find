@@ -280,6 +280,15 @@ for (const id of ["claude", "codex", "agy", "opencode"]) {
   const argvExplicit = adapter.buildRun("hello", null, { model: "opencode/hy3-free" })
   assert(argvExplicit.indexOf("--model") !== -1 && argvExplicit.indexOf("opencode/hy3-free") !== -1, "opencode buildRun with explicit model includes --model")
 
+  const resumeArgv = adapter.buildResume("ses_12345", AiConfig.defaults())
+  eq(resumeArgv[0], "opencode", "opencode buildResume calls opencode binary")
+  assert(resumeArgv.indexOf("run") === -1, "opencode buildResume does NOT use batch 'run' subcommand")
+  assert(resumeArgv.indexOf("--session") !== -1, "opencode buildResume passes --session")
+  assert(resumeArgv.indexOf("ses_12345") !== -1, "opencode buildResume passes session ID")
+
+  const resumeArgvModel = adapter.buildResume("ses_12345", { model: "opencode/hy3-free" })
+  assert(resumeArgvModel.indexOf("--model") !== -1 && resumeArgvModel.indexOf("opencode/hy3-free") !== -1, "opencode buildResume with explicit model includes --model")
+
   const ps = {}
   let text = ""
   let sawSession = null
