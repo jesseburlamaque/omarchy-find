@@ -37,6 +37,8 @@ Whether you are looking for deeply nested project files, academic papers, media 
 
 Type `ai <question>` in the search overlay to stream answers from your preferred AI coding agent directly inside the overlay. Press `Enter` to continue the conversation in a full terminal session, `Ctrl+C` to copy the response, or `Esc` to cancel.
 
+https://github.com/user-attachments/assets/5b8921af-0453-403d-82b3-56987d6f8622
+
 ### Automatic Agent Detection
 
 By default, Omarchy Find automatically detects and uses the default AI agent configured in your Omarchy system (`~/.config/omarchy/defaults/agent`).
