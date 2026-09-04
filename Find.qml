@@ -100,9 +100,29 @@ Item {
   property int contentMargin: Style.spacing.panelPadding
   property int contentSpacing: Style.spacing.md
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
-  property int cardWidth: Math.min(Style.space(660), panel.width - Style.gapsOut * 2)
-  property int cardHeight: Math.min(Style.space(520), panel.height - Style.gapsOut * 2)
-  property int rowHeight: Math.max(Style.space(44), Style.font.body + Style.space(20))
+  // Safe clearance margins: guarantees the centered card never crowds or touches
+  // screen edges, top/bottom bars, docks, or borders across resolutions and scale factors.
+  readonly property int safeMarginY: panel && panel.height > 0
+    ? Math.max(Style.space(52), Math.round(panel.height * 0.09))
+    : Style.space(52)
+  readonly property int safeMarginX: panel && panel.width > 0
+    ? Math.max(Style.space(28), Math.round(panel.width * 0.06))
+    : Style.space(28)
+
+  readonly property int maxCardWidth: panel && panel.width > 0
+    ? Math.max(Style.space(320), panel.width - safeMarginX * 2)
+    : Style.space(660)
+  readonly property int maxCardHeight: panel && panel.height > 0
+    ? Math.max(Style.space(260), panel.height - safeMarginY * 2)
+    : Style.space(520)
+
+  property int cardWidth: Math.min(Style.space(660), maxCardWidth)
+  property int cardHeight: Math.min(Style.space(520), maxCardHeight)
+
+  readonly property bool isCompact: panel && panel.height > 0 && panel.height < Style.space(720)
+  property int rowHeight: isCompact
+    ? Math.max(Style.space(38), Style.font.body + Style.space(14))
+    : Math.max(Style.space(44), Style.font.body + Style.space(20))
   property string sortMode: "relevance"
   property bool sortMenuOpen: false
   property var rawItems: []
