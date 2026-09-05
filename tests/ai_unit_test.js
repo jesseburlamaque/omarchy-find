@@ -151,7 +151,7 @@ function drainToReady(maxTicks) {
 
 // argv safety: prompt must always be a single literal argv element, never
 // concatenated into another string, for every adapter.
-for (const id of ["claude", "codex", "agy", "opencode"]) {
+for (const id of ["claude", "codex", "agy", "opencode", "pi"]) {
   const adapter = AiAdapters.get(id)
   assert(adapter !== null, "adapter registered: " + id)
   const nasty = "\"'; $(echo hi) `uname` | ; \n中文 🚀"
@@ -314,8 +314,59 @@ for (const id of ["claude", "codex", "agy", "opencode"]) {
 }
 
 {
+  // Pi: argv order, NDJSON event shapes, and session-continuity semantics
+  // verified against real `pi -p ... --mode json` runs (the session event's
+  // id is the ONLY authoritative sessionRef; text_delta events are already
+  // incremental; thinking/toolcall deltas stay activity-only; turn_end and
+  // agent_end both carry the full answer for the finalText fallback).
+  const adapter = AiAdapters.get("pi")
+  assert(adapter !== null, "pi adapter registered")
+
+  const argv = adapter.buildRun("hello", null, AiConfig.defaults())
+  const pIdx = argv.indexOf("-p")
+  eq(argv[pIdx + 1], "hello", "pi buildRun binds the prompt as -p's own value (value-taking, like agy's --print)")
+  assert(argv.indexOf("--mode") !== -1 && argv[argv.indexOf("--mode") + 1] === "json", "pi buildRun streams NDJSON events")
+  const argvModel = adapter.buildRun("hello", null, { model: "opencode-go/qwen3.8-flash" })
+  assert(argvModel.indexOf("--model") !== -1 && argvModel.indexOf("opencode-go/qwen3.8-flash") !== -1, "pi buildRun with explicit model includes --model")
+  assert(argvModel.indexOf("--model") < argvModel.indexOf("-p"), "pi buildRun groups options before -p so --model can never be read as the prompt")
+
+  const resumeArgv = adapter.buildResume("01a0736b-5551-7689-99ae-b04e08489f3a", AiConfig.defaults())
+  eq(resumeArgv[0], "pi", "pi buildResume calls the pi binary")
+  assert(resumeArgv.indexOf("--session-id") !== -1 && resumeArgv.indexOf("01a0736b-5551-7689-99ae-b04e08489f3a") !== -1, "pi buildResume resumes the exact session id")
+  const resumeArgvModel = adapter.buildResume("sess-x", { model: "opencode/hy3-free" })
+  assert(resumeArgvModel.indexOf("--model") !== -1 && resumeArgvModel.indexOf("opencode/hy3-free") !== -1, "pi buildResume with explicit model includes --model")
+
+  const ps = {}
+  let text = ""
+  let sawSession = null
+  const lines = [
+    '{"type":"session","version":3,"id":"01a0736b-5551-7689-99ae-b04e08489f3a","timestamp":"2026-09-05T21:13:29.170Z","cwd":"/home/mark"}',
+    '{"type":"turn_start"}',
+    '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}',
+    '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"The user wants exactly"}}',
+    '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Hello"}}',
+    '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"toolcall_delta","contentIndex":2,"delta":"{\"cmd\":\"echo\"}"}}',
+    '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" world"}}',
+    '{"type":"turn_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"..."},{"type":"text","text":"Hello world"}],"stopReason":"stop"},"toolResults":[]}',
+    '{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"thinking","thinking":"..."},{"type":"text","text":"Hello world"}]}],"willRetry":false}'
+  ]
+  for (const line of lines) {
+    for (const ev of adapter.parseLine(line, ps)) {
+      if (ev.type === "text") text += ev.text
+      if (ev.type === "session") sawSession = ev.sessionRef
+    }
+  }
+  eq(sawSession, "01a0736b-5551-7689-99ae-b04e08489f3a", "pi adapter captures the session id from the session event")
+  eq(text, "Hello world", "pi adapter reconstructs streamed text from text_delta events only — thinking and toolcall deltas are never answer text")
+  eq(ps.finalText, "Hello world", "pi adapter stashes the agent_end full text as a fallback")
+
+  const cls = adapter.classifyFailure(1, "error: API key not configured")
+  assert(cls && cls.kind === "auth", "pi classifyFailure routes auth stderr through the generic classifier")
+}
+
+{
   // Malformed JSON / unknown event types must never throw for any adapter.
-  for (const id of ["claude", "codex", "agy", "opencode"]) {
+  for (const id of ["claude", "codex", "agy", "opencode", "pi"]) {
     const adapter = AiAdapters.get(id)
     let threw = false
     try {
@@ -558,6 +609,39 @@ for (const id of ["claude", "codex", "agy", "opencode"]) {
   const resumeArgv = AiBackend.buildHandoffArgv()
   assert(resumeArgv.indexOf("server-assigned-id") !== -1, "handoff argv resumes the server-confirmed id, not the caller guess")
   assert(resumeArgv.indexOf(callerUuid) === -1, "handoff argv never references the stale caller uuid")
+}
+
+{
+  // Pi end-to-end: the real NDJSON shape (session event first, incremental
+  // text_delta events, thinking/toolcall deltas never surfaced as text,
+  // agent_end carrying the authoritative full answer) through the whole
+  // AiBackend pipeline to a handoff that resumes the captured session id.
+  AiBackend.loadConfig(JSON.stringify({ agent: "pi" }))
+  AiBackend.cancel()
+  const g = AiBackend.beginGeneration("pi e2e test")
+  assert(Array.isArray(g.argv), "pi generation produces an argv")
+  assert(g.argv[0] === "setsid", "pi argv is process-group wrapped like every adapter")
+  const pIdx = g.argv.indexOf("-p")
+  assert(pIdx !== -1 && g.argv[pIdx + 1] === "pi e2e test", "pi buildRun binds the prompt as -p's own value")
+  eq(g.argv[g.argv.indexOf("--mode") + 1], "json", "pi buildRun streams NDJSON events")
+  assert(g.argv.indexOf("--session-id") === -1, "pi buildRun never passes a caller session id (pi assigns its own)")
+
+  const gen = g.generation
+  AiBackend.handleLine(gen, '{"type":"session","version":3,"id":"01a0736b-5551-7689-99ae-b04e08489f3a","cwd":"/home/mark"}')
+  AiBackend.handleLine(gen, '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"hmm"}}')
+  AiBackend.handleLine(gen, '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Hello"}}')
+  AiBackend.handleLine(gen, '{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" world"}}')
+  AiBackend.handleExit(gen, 0)
+  const snap = drainToReady()
+  eq(snap.state, "ready", "pi session reaches Ready after its typewriter drain")
+  eq(snap.sessionRef, "01a0736b-5551-7689-99ae-b04e08489f3a", "pi sessionRef comes from the NDJSON session event")
+  eq(snap.rawText, "Hello world", "pi text_delta events accumulate into rawText (thinking deltas excluded)")
+
+  const resumeArgv = AiBackend.buildHandoffArgv()
+  assert(Array.isArray(resumeArgv), "pi handoff argv builds from Ready")
+  assert(resumeArgv.indexOf("--session-id") !== -1, "pi handoff resumes via --session-id")
+  assert(resumeArgv.indexOf("01a0736b-5551-7689-99ae-b04e08489f3a") !== -1, "pi handoff carries the captured session id")
+  assert(resumeArgv.indexOf("pi e2e test") === -1, "pi handoff argv never carries the prompt")
 }
 
 {

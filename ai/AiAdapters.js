@@ -488,11 +488,123 @@ var opencodeAdapter = {
   }
 }
 
+// -------------------------------------------------------------------- Pi ---
+
+var piAdapter = {
+  id: "pi",
+  label: "Pi",
+  binary: "pi",
+  capabilities: {
+    // The session id lands in the very first NDJSON event and `pi
+    // --session-id <id>` resumes it from the same working directory — see
+    // the buildResume note below for the project-scoping caveat.
+    continuity: "returned-id",
+    modelOverride: true,
+    webSearchDetection: false,
+    resumeBeforeExit: false
+  },
+
+  createSessionRef: function() { return null },
+
+  // Verified against real `pi -p '<prompt>' --mode json` runs: the prompt
+  // must be the argv element immediately following -p (same value-taking
+  // gotcha as agy's --print — a trailing positional after other options is
+  // likewise bound correctly, but keeping -p+prompt adjacent removes any
+  // ambiguity). Options are grouped BEFORE -p so --model can never be
+  // mistaken for the prompt value.
+  buildRun: function(prompt, sessionRef, config) {
+    var argv = ["pi", "--mode", "json"]
+    if (config && config.model) argv.push("--model", config.model)
+    argv.push("-p", prompt)
+    return argv
+  },
+
+  // pi scopes session files per project (working directory). The overlay
+  // spawns the agent with quickshell's cwd and xdg-terminal-exec resumes
+  // with --dir=$HOME, and quickshell runs from $HOME (its service cwd), so
+  // both sides resolve to the same project and the exact --session-id
+  // lookup finds the file the headless run saved. If the shell were ever
+  // started from elsewhere, resume would open a fresh session for that id
+  // instead — same class of limitation as any per-project session store.
+  buildResume: function(sessionRef, config) {
+    var argv = ["pi", "--session-id", sessionRef]
+    if (config && config.model) argv.push("--model", config.model)
+    return argv
+  },
+
+  // NDJSON schema captured from real `pi -p ... --mode json` runs:
+  //   {"type":"session","id":"01a0...","cwd":"/home/user"}
+  //   {"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Hello"}}
+  //   {"type":"turn_end","message":{...}} / {"type":"agent_end","messages":[...]}
+  // text_delta events are already incremental (unlike codex's full-text
+  // item updates) so each is emitted as-is. thinking/toolcall deltas are
+  // surfaced as activity only, never as answer text. The authoritative
+  // final answer lives in turn_end/agent_end message content — kept as a
+  // fallback for AiBackend's defense-in-depth, never the primary path.
+  parseLine: function(line, ps) {
+    var obj = safeParse(line)
+    if (obj === undefined || obj === null || typeof obj !== "object") return []
+    var events = []
+    var type = obj.type
+
+    if (type === "session") {
+      if (!ps.sessionCaptured && typeof obj.id === "string" && obj.id.length > 0) {
+        ps.sessionCaptured = true
+        events.push({ type: "session", sessionRef: obj.id })
+      }
+      return events
+    }
+
+    if (type === "turn_start") {
+      ps.turnIndex = (ps.turnIndex || 0) + 1
+      events.push({ type: "activity", activity: "thinking" })
+      return events
+    }
+
+    if (type === "message_update" && obj.assistantMessageEvent && typeof obj.assistantMessageEvent === "object") {
+      var se = obj.assistantMessageEvent
+      if (se.type === "text_delta" && typeof se.delta === "string" && se.delta.length > 0) {
+        events.push({ type: "text", text: se.delta })
+      } else if (se.type === "thinking_start" || se.type === "thinking_delta" ||
+                 se.type === "toolcall_start" || se.type === "toolcall_delta") {
+        events.push({ type: "activity", activity: "thinking" })
+      }
+      return events
+    }
+
+    if (type === "turn_end" || type === "agent_end") {
+      // turn_end -> obj.message (assistant message); agent_end ->
+      // obj.messages (conversation array, last entry is the assistant
+      // reply). Concatenate the type:"text" content parts only — thinking
+      // and tool-call payloads never leak into the answer fallback.
+      var msg = (type === "agent_end" && Array.isArray(obj.messages))
+        ? obj.messages[obj.messages.length - 1]
+        : obj.message
+      if (msg && Array.isArray(msg.content)) {
+        var full = ""
+        for (var i = 0; i < msg.content.length; i++) {
+          var part = msg.content[i]
+          if (part && part.type === "text" && typeof part.text === "string") full += part.text
+        }
+        if (full.length > 0) ps.finalText = full
+      }
+      return events
+    }
+
+    return events
+  },
+
+  classifyFailure: function(exitCode, stderrText) {
+    return classifyGeneric(stderrText)
+  }
+}
+
 var ADAPTERS = {
   claude: claudeAdapter,
   codex: codexAdapter,
   agy: agyAdapter,
-  opencode: opencodeAdapter
+  opencode: opencodeAdapter,
+  pi: piAdapter
 }
 
 function get(id) {
