@@ -100,6 +100,9 @@ Item {
   property int contentMargin: Style.spacing.panelPadding
   property int contentSpacing: Style.spacing.md
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
+  // The query line wraps instead of eliding; the header (and the card with it)
+  // grows up to this many lines before the text starts eliding again.
+  property int searchMaxLines: 5
   // Safe clearance margins: guarantees the centered card never crowds or touches
   // screen edges, top/bottom bars, docks, or borders across resolutions and scale factors.
   readonly property int safeMarginY: panel && panel.height > 0
@@ -1094,19 +1097,19 @@ Item {
     BorderSurface {
       id: card
       width: root.cardWidth
-      readonly property int aiMaxBoxHeight: Math.max(0, root.cardHeight - root.headerHeight - root.aiChipRowHeight - footer.implicitHeight - root.contentSpacing * 3 - card.contentTopInset - card.contentBottomInset)
+      readonly property int aiMaxBoxHeight: Math.max(0, root.cardHeight - searchField.height - root.aiChipRowHeight - footer.implicitHeight - root.contentSpacing * 3 - card.contentTopInset - card.contentBottomInset)
       readonly property int aiBoxHeight: (root.aiSession && root.aiSession.state !== "idle" && aiAnswerText.text.length > 0)
         ? Math.min(card.aiMaxBoxHeight, aiAnswerText.implicitHeight + Style.spacing.sm * 2)
         : 0
       height: root.expanded
         ? (root.isGoogleSearch
             ? (root.googleSearchTerms !== ""
-                ? (root.headerHeight + root.rowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset)
-                : (root.headerHeight + card.contentTopInset + card.contentBottomInset))
+                ? (searchField.height + root.rowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset)
+                : (searchField.height + card.contentTopInset + card.contentBottomInset))
             : root.isAiMode
-              ? (root.headerHeight + root.aiChipRowHeight + card.aiBoxHeight + footer.implicitHeight + (card.aiBoxHeight > 0 ? root.contentSpacing * 3 : root.contentSpacing * 2) + card.contentTopInset + card.contentBottomInset)
+              ? (searchField.height + root.aiChipRowHeight + card.aiBoxHeight + footer.implicitHeight + (card.aiBoxHeight > 0 ? root.contentSpacing * 3 : root.contentSpacing * 2) + card.contentTopInset + card.contentBottomInset)
               : root.cardHeight)
-        : root.headerHeight + card.contentTopInset + card.contentBottomInset
+        : searchField.height + card.contentTopInset + card.contentBottomInset
       radius: root.cornerRadius
       anchors.centerIn: parent
 
@@ -1266,14 +1269,21 @@ Item {
         Rectangle {
           id: searchField
           width: parent.width
-          height: root.headerHeight
+          // Height of one rendered line of the query, used to keep the vertical
+          // padding the single-line header had while the text wraps.
+          readonly property real lineHeight: searchText.lineCount > 0
+            ? searchText.implicitHeight / searchText.lineCount
+            : searchText.implicitHeight
+          height: Math.max(root.headerHeight,
+                           Math.ceil(searchText.implicitHeight + root.headerHeight - lineHeight))
           radius: root.cornerRadius
           color: "transparent"
 
           Text {
             id: searchIcon
             anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Math.round((root.headerHeight - searchIcon.implicitHeight) / 2)
             text: "󰍉"
             textFormat: Text.PlainText
             color: root.accent
@@ -1282,6 +1292,7 @@ Item {
           }
 
           Text {
+            id: searchText
             anchors.left: searchIcon.right
             anchors.leftMargin: Style.spacing.sm
             anchors.right: expandButton.left
@@ -1293,6 +1304,8 @@ Item {
             opacity: root.filterText ? 1 : 0.58
             font.family: root.fontFamily
             font.pixelSize: Style.font.heading
+            wrapMode: Text.Wrap
+            maximumLineCount: Math.max(1, root.searchMaxLines)
             elide: Text.ElideRight
           }
 
@@ -1300,7 +1313,8 @@ Item {
             id: expandButton
             visible: !root.isGoogleSearch && !root.isAiMode
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Math.round((root.headerHeight - expandButton.height) / 2)
             width: expandLabel.implicitWidth + Style.space(18)
             height: Math.max(Style.space(26), Style.font.body + Style.space(10))
             radius: root.cornerRadius
