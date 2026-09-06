@@ -49,6 +49,7 @@ By default, Omarchy Find automatically detects and uses the default AI agent con
 | **OpenCode** (`opencode`) | ✅ Fully supported (automatic streaming & terminal handoff) |
 | **Claude Code** (`claude`) | ✅ Fully supported (automatic streaming & terminal handoff) |
 | **Codex** (`codex`) | ✅ Fully supported (automatic streaming & terminal handoff) |
+| **Pi** (`pi`) | ✅ Fully supported (automatic streaming & terminal handoff) |
 
 #### Setting the Omarchy Default Agent
 
@@ -63,6 +64,11 @@ You can set your default agent using the Omarchy CLI or directly via shell:
   echo "opencode" > ~/.config/omarchy/defaults/agent
   ```
   *(Or via `omarchy default agent opencode`)*
+- **Set to Pi (`pi`):**
+  ```sh
+  echo "pi" > ~/.config/omarchy/defaults/agent
+  ```
+  *(Or via `omarchy default agent pi`)*
 
 Omarchy Find hot-reloads this change live in real time without requiring a shell restart.
 
@@ -84,7 +90,7 @@ If you wish to use a different agent specifically inside Omarchy Find (for examp
 
 ```json
 {
-  "agent": "agy",          // "agy" | "opencode" | "claude" | "codex"
+  "agent": "agy",          // "agy" | "opencode" | "claude" | "codex" | "pi"
   "model": null,           // Override model string (e.g. "opencode-go/qwen3.8-flash") or null for CLI default
   "prefix": "ai ",         // Trigger prefix in the overlay
   "maxAnswerRows": 6       // Maximum visible answer lines before scrolling
