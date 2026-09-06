@@ -100,9 +100,13 @@ Item {
   property int contentMargin: Style.spacing.panelPadding
   property int contentSpacing: Style.spacing.md
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
-  // The query line wraps instead of eliding; the header (and the card with it)
-  // grows up to this many lines before the text starts eliding again.
-  property int searchMaxLines: 5
+  // The query line wraps instead of eliding. It grows the header, and the card
+  // with it, until the card has no room left to give on this display, then
+  // scrolls. The budget is derived from cardHeight (itself clamped to the
+  // screen), so a smaller display or a larger font simply yields fewer lines.
+  // These two are what the header is not allowed to eat into.
+  property int searchMinVisibleRows: 3
+  property int aiMinAnswerHeight: rowHeight * 2
   // Safe clearance margins: guarantees the centered card never crowds or touches
   // screen edges, top/bottom bars, docks, or borders across resolutions and scale factors.
   readonly property int safeMarginY: panel && panel.height > 0
@@ -1269,13 +1273,30 @@ Item {
         Rectangle {
           id: searchField
           width: parent.width
-          // Height of one rendered line of the query, used to keep the vertical
-          // padding the single-line header had while the text wraps.
+          // Height of one rendered line of the query. Keeps the vertical padding
+          // the single-line header had, and lets the viewport grow whole lines.
           readonly property real lineHeight: searchText.lineCount > 0
             ? searchText.implicitHeight / searchText.lineCount
             : searchText.implicitHeight
-          height: Math.max(root.headerHeight,
-                           Math.ceil(searchText.implicitHeight + root.headerHeight - lineHeight))
+          readonly property real padding: Math.max(0, root.headerHeight - lineHeight)
+          // How tall the query may grow before it scrolls instead: everything the
+          // card can spare on this display, once the rows that have to stay
+          // visible under it are accounted for.
+          readonly property int maxHeight: {
+            var chrome = footer.implicitHeight + card.contentTopInset + card.contentBottomInset
+            if (root.isAiMode)
+              return root.cardHeight - chrome - root.aiChipRowHeight - root.aiMinAnswerHeight - root.contentSpacing * 3
+            if (root.isGoogleSearch)
+              return root.cardHeight - chrome - root.rowHeight - root.contentSpacing * 2
+            return root.cardHeight - chrome
+                 - (chips.visible ? chips.height : 0)
+                 - (sortBar.visible ? sortBar.height : 0)
+                 - (countLabel.visible ? countLabel.implicitHeight : 0)
+                 - root.rowHeight * root.searchMinVisibleRows
+                 - root.contentSpacing * (countLabel.visible ? 5 : 4)
+          }
+          readonly property int maxLines: Math.max(1, Math.floor(Math.max(0, maxHeight - padding) / Math.max(1, lineHeight)))
+          height: Math.max(root.headerHeight, Math.ceil(searchFlick.height + padding))
           radius: root.cornerRadius
           color: "transparent"
 
@@ -1291,22 +1312,34 @@ Item {
             font.pixelSize: Style.font.heading
           }
 
-          Text {
-            id: searchText
+          Flickable {
+            id: searchFlick
             anchors.left: searchIcon.right
             anchors.leftMargin: Style.spacing.sm
             anchors.right: expandButton.left
             anchors.rightMargin: Style.spacing.sm
             anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || Backend.t("searchPlaceholder", root.locale)
-            textFormat: Text.PlainText
-            color: root.foreground
-            opacity: root.filterText ? 1 : 0.58
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
-            wrapMode: Text.Wrap
-            maximumLineCount: Math.max(1, root.searchMaxLines)
-            elide: Text.ElideRight
+            height: Math.min(searchText.implicitHeight, searchField.maxLines * searchField.lineHeight)
+            contentWidth: width
+            contentHeight: searchText.implicitHeight
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            // Typing only ever appends, so keep the tail of the query in view.
+            onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
+            onHeightChanged: contentY = Math.max(0, contentHeight - height)
+
+            Text {
+              id: searchText
+              width: searchFlick.width
+              text: root.filterText || Backend.t("searchPlaceholder", root.locale)
+              textFormat: Text.PlainText
+              color: root.foreground
+              opacity: root.filterText ? 1 : 0.58
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              wrapMode: Text.Wrap
+            }
           }
 
           Rectangle {
