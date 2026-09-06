@@ -1117,7 +1117,11 @@ Item {
       radius: root.cornerRadius
       anchors.centerIn: parent
 
+      // A Behavior chasing a target that is itself animating lags behind it, so
+      // while the header grows the card tracks it frame for frame and only
+      // animates height changes of its own (expanding, the AI answer box).
       Behavior on height {
+        enabled: !searchFieldGrow.running
         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
       }
 
@@ -1296,9 +1300,15 @@ Item {
                  - root.contentSpacing * (countLabel.visible ? 5 : 4)
           }
           readonly property int maxLines: Math.max(1, Math.floor(Math.max(0, maxHeight - padding) / Math.max(1, lineHeight)))
-          height: Math.max(root.headerHeight, Math.ceil(searchFlick.height + padding))
+          readonly property int targetHeight: Math.max(root.headerHeight,
+            Math.ceil(Math.min(searchText.implicitHeight, maxLines * lineHeight) + padding))
+          height: targetHeight
           radius: root.cornerRadius
           color: "transparent"
+
+          Behavior on height {
+            NumberAnimation { id: searchFieldGrow; duration: 180; easing.type: Easing.OutCubic }
+          }
 
           Text {
             id: searchIcon
@@ -1319,7 +1329,7 @@ Item {
             anchors.right: expandButton.left
             anchors.rightMargin: Style.spacing.sm
             anchors.verticalCenter: parent.verticalCenter
-            height: Math.min(searchText.implicitHeight, searchField.maxLines * searchField.lineHeight)
+            height: Math.max(0, searchField.height - searchField.padding)
             contentWidth: width
             contentHeight: searchText.implicitHeight
             clip: true
