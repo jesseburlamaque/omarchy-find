@@ -1335,9 +1335,27 @@ Item {
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
-            // Typing only ever appends, so keep the tail of the query in view.
-            onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
-            onHeightChanged: contentY = Math.max(0, contentHeight - height)
+            // Keep the tail of the query in view once it exceeds the visible budget.
+            // When expanding within maxLines, contentY stays at 0 so earlier lines do not jump.
+            readonly property real maxContentHeight: searchField.maxLines * searchField.lineHeight
+            function updateScroll() {
+              if (contentHeight > maxContentHeight + 1) {
+                contentY = Math.max(0, contentHeight - height)
+              } else {
+                contentY = 0
+              }
+            }
+            onContentHeightChanged: updateScroll()
+            onHeightChanged: updateScroll()
+
+            Connections {
+              target: root
+              function onFilterTextChanged() {
+                if (searchFlick.contentHeight > searchFlick.maxContentHeight + 1) {
+                  searchFlick.contentY = Math.max(0, searchFlick.contentHeight - searchFlick.height)
+                }
+              }
+            }
 
             Text {
               id: searchText
