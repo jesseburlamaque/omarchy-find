@@ -100,6 +100,13 @@ Item {
   property int contentMargin: Style.spacing.panelPadding
   property int contentSpacing: Style.spacing.md
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
+  // The query line wraps instead of eliding. It grows the header, and the card
+  // with it, until the card has no room left to give on this display, then
+  // scrolls. The budget is derived from cardHeight (itself clamped to the
+  // screen), so a smaller display or a larger font simply yields fewer lines.
+  // These two are what the header is not allowed to eat into.
+  property int searchMinVisibleRows: 3
+  property int aiMinAnswerHeight: rowHeight * 2
   // Safe clearance margins: guarantees the centered card never crowds or touches
   // screen edges, top/bottom bars, docks, or borders across resolutions and scale factors.
   readonly property int safeMarginY: panel && panel.height > 0
@@ -1094,23 +1101,27 @@ Item {
     BorderSurface {
       id: card
       width: root.cardWidth
-      readonly property int aiMaxBoxHeight: Math.max(0, root.cardHeight - root.headerHeight - root.aiChipRowHeight - footer.implicitHeight - root.contentSpacing * 3 - card.contentTopInset - card.contentBottomInset)
+      readonly property int aiMaxBoxHeight: Math.max(0, root.cardHeight - searchField.height - root.aiChipRowHeight - footer.implicitHeight - root.contentSpacing * 3 - card.contentTopInset - card.contentBottomInset)
       readonly property int aiBoxHeight: (root.aiSession && root.aiSession.state !== "idle" && aiAnswerText.text.length > 0)
         ? Math.min(card.aiMaxBoxHeight, aiAnswerText.implicitHeight + Style.spacing.sm * 2)
         : 0
       height: root.expanded
         ? (root.isGoogleSearch
             ? (root.googleSearchTerms !== ""
-                ? (root.headerHeight + root.rowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset)
-                : (root.headerHeight + card.contentTopInset + card.contentBottomInset))
+                ? (searchField.height + root.rowHeight + footer.implicitHeight + root.contentSpacing * 2 + card.contentTopInset + card.contentBottomInset)
+                : (searchField.height + card.contentTopInset + card.contentBottomInset))
             : root.isAiMode
-              ? (root.headerHeight + root.aiChipRowHeight + card.aiBoxHeight + footer.implicitHeight + (card.aiBoxHeight > 0 ? root.contentSpacing * 3 : root.contentSpacing * 2) + card.contentTopInset + card.contentBottomInset)
+              ? (searchField.height + root.aiChipRowHeight + card.aiBoxHeight + footer.implicitHeight + (card.aiBoxHeight > 0 ? root.contentSpacing * 3 : root.contentSpacing * 2) + card.contentTopInset + card.contentBottomInset)
               : root.cardHeight)
-        : root.headerHeight + card.contentTopInset + card.contentBottomInset
+        : searchField.height + card.contentTopInset + card.contentBottomInset
       radius: root.cornerRadius
       anchors.centerIn: parent
 
+      // A Behavior chasing a target that is itself animating lags behind it, so
+      // while the header grows the card tracks it frame for frame and only
+      // animates height changes of its own (expanding, the AI answer box).
       Behavior on height {
+        enabled: !searchFieldGrow.running
         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
       }
 
@@ -1266,14 +1277,44 @@ Item {
         Rectangle {
           id: searchField
           width: parent.width
-          height: root.headerHeight
+          // Height of one rendered line of the query. Keeps the vertical padding
+          // the single-line header had, and lets the viewport grow whole lines.
+          readonly property real lineHeight: searchText.lineCount > 0
+            ? searchText.implicitHeight / searchText.lineCount
+            : searchText.implicitHeight
+          readonly property real padding: Math.max(0, root.headerHeight - lineHeight)
+          // How tall the query may grow before it scrolls instead: everything the
+          // card can spare on this display, once the rows that have to stay
+          // visible under it are accounted for.
+          readonly property int maxHeight: {
+            var chrome = footer.implicitHeight + card.contentTopInset + card.contentBottomInset
+            if (root.isAiMode)
+              return root.cardHeight - chrome - root.aiChipRowHeight - root.aiMinAnswerHeight - root.contentSpacing * 3
+            if (root.isGoogleSearch)
+              return root.cardHeight - chrome - root.rowHeight - root.contentSpacing * 2
+            return root.cardHeight - chrome
+                 - (chips.visible ? chips.height : 0)
+                 - (sortBar.visible ? sortBar.height : 0)
+                 - (countLabel.visible ? countLabel.implicitHeight : 0)
+                 - root.rowHeight * root.searchMinVisibleRows
+                 - root.contentSpacing * (countLabel.visible ? 5 : 4)
+          }
+          readonly property int maxLines: Math.max(1, Math.floor(Math.max(0, maxHeight - padding) / Math.max(1, lineHeight)))
+          readonly property int targetHeight: Math.max(root.headerHeight,
+            Math.ceil(Math.min(searchText.implicitHeight, maxLines * lineHeight) + padding))
+          height: targetHeight
           radius: root.cornerRadius
           color: "transparent"
+
+          Behavior on height {
+            NumberAnimation { id: searchFieldGrow; duration: 180; easing.type: Easing.OutCubic }
+          }
 
           Text {
             id: searchIcon
             anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Math.round((root.headerHeight - searchIcon.implicitHeight) / 2)
             text: "󰍉"
             textFormat: Text.PlainText
             color: root.accent
@@ -1281,26 +1322,42 @@ Item {
             font.pixelSize: Style.font.heading
           }
 
-          Text {
+          Flickable {
+            id: searchFlick
             anchors.left: searchIcon.right
             anchors.leftMargin: Style.spacing.sm
             anchors.right: expandButton.left
             anchors.rightMargin: Style.spacing.sm
             anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || Backend.t("searchPlaceholder", root.locale)
-            textFormat: Text.PlainText
-            color: root.foreground
-            opacity: root.filterText ? 1 : 0.58
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
-            elide: Text.ElideRight
+            height: Math.max(0, searchField.height - searchField.padding)
+            contentWidth: width
+            contentHeight: searchText.implicitHeight
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            // Typing only ever appends, so keep the tail of the query in view.
+            onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
+            onHeightChanged: contentY = Math.max(0, contentHeight - height)
+
+            Text {
+              id: searchText
+              width: searchFlick.width
+              text: root.filterText || Backend.t("searchPlaceholder", root.locale)
+              textFormat: Text.PlainText
+              color: root.foreground
+              opacity: root.filterText ? 1 : 0.58
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              wrapMode: Text.Wrap
+            }
           }
 
           Rectangle {
             id: expandButton
             visible: !root.isGoogleSearch && !root.isAiMode
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: Math.round((root.headerHeight - expandButton.height) / 2)
             width: expandLabel.implicitWidth + Style.space(18)
             height: Math.max(Style.space(26), Style.font.body + Style.space(10))
             radius: root.cornerRadius
