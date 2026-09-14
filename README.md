@@ -1,5 +1,7 @@
 # Omarchy Find
 
+[![Built for Omarchy: Plugin](https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg)](https://omarchyplugins.com/plugin.html?id=jesseburlamaque.omarchy-find)
+
 A fast, elegant, keyboard-driven universal file search and quick launcher for the [Omarchy](https://github.com/basecamp/omarchy) shell on Linux.
 
 ![Omarchy Find](preview.png)
