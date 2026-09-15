@@ -1,0 +1,4 @@
+{
+  "excludes": ["iCloud", "remote-nfs"],
+  "oneFileSystem": false
+}

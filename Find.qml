@@ -74,6 +74,14 @@ Item {
     }
   }
 
+  // Optional ~/.config/omarchy-find/config.json — extra fd excludes and the
+  // --one-file-system toggle. Defaults until the FileView below loads, so a
+  // search fired before (or entirely without) the file behaves as it always
+  // has. Same `undefined` sentinel as aiConfigLastRawText, for the same
+  // reason: the watchdog re-reading unchanged text must be a real no-op.
+  property var userConfig: Backend.defaultUserConfig()
+  property var userConfigLastRawText: undefined
+
   // Protects against out-of-order search results.
   property int searchGen: 0
   property bool rerunPending: false
@@ -303,6 +311,23 @@ Item {
 
   // Search
 
+  // Applies ~/.config/omarchy-find/config.json (raw text, or null when the
+  // file does not exist). Invalid JSON or an invalid field degrades to the
+  // built-in defaults with a console warning — a bad config never blocks a
+  // search, and the file itself is never created or rewritten by the plugin.
+  function applyUserConfig(rawText) {
+    if (rawText === root.userConfigLastRawText) return // unchanged — no-op
+    root.userConfigLastRawText = rawText
+    var result = Backend.mergeUserConfig(rawText)
+    if (result.warning) console.warn("[omarchy-find] " + result.warning)
+    var changed = JSON.stringify(result.config) !== JSON.stringify(root.userConfig)
+    root.userConfig = result.config
+    // fd's argv changed, so anything already on screen was built with the
+    // old excludes — re-run so an open overlay reflects the edit live.
+    // (A reformat that leaves the effective config identical re-runs nothing.)
+    if (changed) root.runSearch()
+  }
+
   function runSearch() {
     // Search only when expanded and not in Google search or AI mode.
     if (!root.expanded || root.isGoogleSearch || root.isAiMode) return
@@ -324,13 +349,13 @@ Item {
     if (filter.dirs) {
       pending++
       procDirs.gen = root.searchGen
-      procDirs.command = Backend.buildArgv(root.filterText, root.activeFilter, true, root.home)
+      procDirs.command = Backend.buildArgv(root.filterText, root.activeFilter, true, root.home, root.userConfig)
       procDirs.running = true
     }
     if (filter.files) {
       pending++
       procFiles.gen = root.searchGen
-      procFiles.command = Backend.buildArgv(root.filterText, root.activeFilter, false, root.home)
+      procFiles.command = Backend.buildArgv(root.filterText, root.activeFilter, false, root.home, root.userConfig)
       procFiles.running = true
     }
     root.pendingProcs = pending
@@ -855,6 +880,20 @@ Item {
     onFileChanged: reload()
   }
 
+  // ~/.config/omarchy-find/config.json — the search-side sibling of ai.json
+  // (extra fd excludes, --one-file-system). Optional, never written by this
+  // plugin, and hot-reloaded by the same watchChanges + onFileChanged
+  // reload() pair documented at length above.
+  FileView {
+    id: userConfigFile
+    path: root.home + "/.config/omarchy-find/config.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyUserConfig(text())
+    onLoadFailed: root.applyUserConfig(null)
+    onFileChanged: reload()
+  }
+
   // Reads ~/.config/omarchy/defaults/agent — the user's Omarchy-wide default
   // AI agent — and passes it to applyAiConfig() as a fallback when ai.json
   // does not specify an agent. Hot-reloaded automatically if the user switches
@@ -869,6 +908,10 @@ Item {
     onFileChanged: reload()
   }
 
+  // Covers config.json as well as ai.json — same parent directory, so the
+  // one gap described above (nothing to watch until ~/.config/omarchy-find/
+  // exists) is identical for both, and applyUserConfig() has the same
+  // content-equality guard that makes a redundant firing a no-op.
   Timer {
     id: aiConfigWatchdog
     interval: 5000
@@ -876,6 +919,7 @@ Item {
     running: true
     onTriggered: {
       aiConfigFile.reload()
+      userConfigFile.reload()
       omarchyAgentFile.reload()
     }
   }
