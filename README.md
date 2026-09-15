@@ -24,7 +24,7 @@ Whether you are looking for deeply nested project files, academic papers, media 
 
 ## Features
 
-- **Blazing Fast Search:** Real-time indexing powered by `fd` with smart multi-term matching and automatic noise filtering (`.git`, `node_modules`, `.cache`, `.venv`, electron storages, trash, etc.).
+- **Blazing Fast Search:** Real-time indexing powered by `fd` with smart multi-term matching and automatic noise filtering (`.git`, `node_modules`, `.cache`, `.venv`, electron storages, trash, etc.), plus [user-configurable excludes](#search-configuration-configjson) for slow network mounts.
 - **Full-Path Awareness:** Matches both filenames and parent folder structures (e.g. typing `config` or `hypr` accurately locates `~/.config/hypr`).
 - **Smart Type Categorization:** Dedicated filters for All files, Non-hidden Folders, System Folders (configs & dotfiles), Documents, Multimedia, and Code.
 - **Dynamic Sorting & Results Limits:** On-the-fly reordering (Relevance, Recent, Oldest, A-Z, Z-A) and customizable display limits.
@@ -32,6 +32,40 @@ Whether you are looking for deeply nested project files, academic papers, media 
 - **Native Shell Aesthetics:** Automatically follows active Omarchy themes, colors, and typography, with status bar widget and CLI integration.
 
 👉 *See [Usage](#usage) for summon options and the complete keyboard shortcuts guide.*
+
+---
+
+## Search Configuration (`config.json`)
+
+Omarchy Find walks your entire home directory with `fd` on every keystroke. That is
+instant on a local disk, but a **network or FUSE mount inside `$HOME`** (rclone,
+sshfs, gvfs, NFS) can stall a search for tens of seconds while the remote
+directory listing is fetched.
+
+Create `~/.config/omarchy-find/config.json` to keep those directories out of the
+walk:
+
+```json
+{
+  "excludes": ["iCloud", "remote-nfs"],
+  "oneFileSystem": false
+}
+```
+
+#### Available Fields (All Optional)
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `excludes` | array of strings | `[]` | Extra patterns to skip, added to the built-in noise filter (`.git`, `node_modules`, `.cache`, …). Each entry is an `fd` exclude glob matched against path components — a plain name like `"iCloud"` skips that directory anywhere it appears. |
+| `oneFileSystem` | boolean | `false` | Keep the search on the filesystem `$HOME` lives on. Skips **every** mount below it at once, so you do not have to name them individually. |
+
+> **Tip:** If you are not sure which directory is slow, start with
+> `"oneFileSystem": true` — it skips all mounted filesystems under `$HOME` without
+> requiring you to know their names.
+
+Changes are hot-reloaded live, with no shell restart. The file is optional and is
+never created or modified by the plugin; if it is missing or invalid, the built-in
+defaults are used and a warning is logged.
 
 ---
 

@@ -23,6 +23,29 @@ var EXCLUDES = [
   "venv"
 ]
 
+// Optional user config: ~/.config/omarchy-find/config.json.
+//
+// Same hard rule as ai.json (see ai/AiConfig.js): this plugin never creates
+// or rewrites the file. Find.qml reads it with a FileView and hands the raw
+// text to mergeUserConfig(); a missing, empty or invalid file just means
+// these defaults.
+//
+//   excludes:       extra fd -E patterns, appended to EXCLUDES above. Meant
+//                   for directories fd is slow to walk on a given machine —
+//                   most commonly a network/FUSE mount inside $HOME
+//                   (rclone, sshfs, gvfs, NFS), where a cold directory
+//                   cache can stall a search for tens of seconds (issue #5).
+//   oneFileSystem:  pass fd's --one-file-system, which keeps the walk on the
+//                   filesystem $HOME lives on. Skips every such mount at
+//                   once, without the user having to name any of them.
+var DEFAULT_USER_CONFIG = {
+  excludes: [],
+  oneFileSystem: false
+}
+
+// Sanity ceiling on a hand-written list; also bounds the argv we build.
+var MAX_USER_EXCLUDES = 64
+
 var SYSTEM_EXCLUDES = [
   "*Cache*",
   "Local Storage",
@@ -246,8 +269,80 @@ function extractTerms(query) {
   return terms
 }
 
+function defaultUserConfig() {
+  return { excludes: [], oneFileSystem: false }
+}
+
+// Returns the cleaned exclude list, or undefined if the value is not a list
+// of strings. Blank entries and duplicates are dropped rather than rejected —
+// they are harmless in a hand-written list — but a non-string entry is a real
+// mistake worth telling the user about.
+function coerceExcludes(value) {
+  if (!Array.isArray(value)) return undefined
+  var out = []
+  var seen = {}
+  for (var i = 0; i < value.length && out.length < MAX_USER_EXCLUDES; i++) {
+    if (typeof value[i] !== "string") return undefined
+    var pattern = value[i].trim()
+    if (pattern.length === 0 || seen[pattern]) continue
+    seen[pattern] = true
+    out.push(pattern)
+  }
+  return out
+}
+
+// Merge raw config.json text (or null/undefined/empty when absent) onto the
+// built-in defaults. Never throws. Always returns a fully-populated config.
+//
+// Returns { config, warning } where warning is a short human-readable string
+// (or null), mirroring AiConfig.mergeConfig(): a bad config degrades to the
+// defaults and never blocks a search, and the file itself is never touched.
+function mergeUserConfig(rawText) {
+  var config = defaultUserConfig()
+
+  var trimmed = (rawText === null || rawText === undefined) ? "" : String(rawText).trim()
+  if (trimmed.length === 0) return { config: config, warning: null }
+
+  var parsed
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch (e) {
+    return { config: config, warning: "config.json is not valid JSON — using built-in defaults" }
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { config: config, warning: "config.json must be a JSON object — using built-in defaults" }
+  }
+
+  var invalidFields = []
+
+  if (Object.prototype.hasOwnProperty.call(parsed, "excludes")) {
+    var excludes = coerceExcludes(parsed.excludes)
+    if (excludes === undefined) invalidFields.push("excludes")
+    else config.excludes = excludes
+  }
+
+  if (Object.prototype.hasOwnProperty.call(parsed, "oneFileSystem")) {
+    if (typeof parsed.oneFileSystem === "boolean") config.oneFileSystem = parsed.oneFileSystem
+    else invalidFields.push("oneFileSystem")
+  }
+
+  // Unknown top-level fields are silently ignored for forwards compatibility.
+
+  var warning = null
+  if (invalidFields.length > 0) {
+    warning = "config.json has an invalid value for " + invalidFields.join(", ") +
+      " — using the default for " + (invalidFields.length === 1 ? "that field" : "those fields")
+  }
+  return { config: config, warning: warning }
+}
+
 // Builds fd arguments. Empty query lists recent items.
-function buildArgv(query, filterIndex, forDirs, home) {
+//
+// userConfig is the optional ~/.config/omarchy-find/config.json result from
+// mergeUserConfig() (see DEFAULT_USER_CONFIG); omitting it keeps the built-in
+// behaviour exactly as before.
+function buildArgv(query, filterIndex, forDirs, home, userConfig) {
   var filter = FILTERS[filterIndex] || FILTERS[0]
   var argv = ["fd", "--color=never", "-i", "--no-ignore", "--follow", "--max-results", String(MAX_RESULTS)]
   argv.push("--type", forDirs ? "d" : "f")
@@ -257,6 +352,17 @@ function buildArgv(query, filterIndex, forDirs, home) {
   }
 
   for (var i = 0; i < EXCLUDES.length; i++) argv.push("-E", EXCLUDES[i])
+
+  // User excludes come after the built-ins; fd applies every -E, so order is
+  // cosmetic, but it keeps the built-in set recognisable when debugging argv.
+  var userExcludes = (userConfig && Array.isArray(userConfig.excludes)) ? userConfig.excludes : []
+  for (var u = 0; u < userExcludes.length && u < MAX_USER_EXCLUDES; u++) {
+    argv.push("-E", userExcludes[u])
+  }
+
+  // Keeps the walk on the filesystem $HOME lives on, so a slow network or
+  // FUSE mount below it is never descended into (issue #5).
+  if (userConfig && userConfig.oneFileSystem === true) argv.push("--one-file-system")
 
   if (filter.systemFolders) {
     argv.push("--max-depth", "3")
