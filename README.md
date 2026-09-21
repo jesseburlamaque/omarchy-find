@@ -132,6 +132,11 @@ omarchy restart shell
 
 ## Usage
 
+File searches do not follow symbolic links into directories. This prevents
+Steam/Wine drive mappings such as `dosdevices/z: -> /` from expanding a home
+directory search into a scan of the entire filesystem. Files reachable only
+through a directory symlink are not included.
+
 You can summon Omarchy Find in four convenient ways:
 
 1. **Status Bar Widget**: Click the magnifier icon (`󰍉`) on the Omarchy top bar.
