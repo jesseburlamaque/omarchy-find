@@ -249,7 +249,7 @@ function extractTerms(query) {
 // Builds fd arguments. Empty query lists recent items.
 function buildArgv(query, filterIndex, forDirs, home) {
   var filter = FILTERS[filterIndex] || FILTERS[0]
-  var argv = ["fd", "--color=never", "-i", "--no-ignore", "--follow", "--max-results", String(MAX_RESULTS)]
+  var argv = ["fd", "--color=never", "-i", "--no-ignore", "--max-results", String(MAX_RESULTS)]
   argv.push("--type", forDirs ? "d" : "f")
 
   if (filter.hidden === true) {
