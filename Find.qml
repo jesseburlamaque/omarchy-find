@@ -24,6 +24,8 @@ Item {
   property int activeFilter: 0
   property bool searching: false
   property string home: Quickshell.env("HOME")
+  // Dead key (us-intl "~" "'" ...) waiting for its letter; see Backend.composeDeadKey().
+  property int deadPending: 0
 
   readonly property bool isGoogleSearch: /^\s*go\s+/i.test(root.filterText)
   readonly property string googleSearchTerms: isGoogleSearch ? root.filterText.replace(/^\s*go\s+/i, "").trim() : ""
@@ -150,6 +152,7 @@ Item {
   }
 
   function open(payloadJson) {
+    root.deadPending = 0
     var query = ""
     try {
       var payload = JSON.parse(payloadJson || "{}")
@@ -1138,6 +1141,13 @@ Item {
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
+          var dead = Backend.composeDeadKey(root.deadPending, event.key, event.text)
+          root.deadPending = dead.pending
+          if (dead.consumed) {
+            if (dead.insert !== "") root.setFilter(root.filterText + dead.insert)
+            event.accepted = true
+            return
+          }
           if (event.key === Qt.Key_Escape) {
             if (root.sortMenuOpen) {
               root.sortMenuOpen = false

@@ -530,3 +530,31 @@ function rankResults(items, query, limit, home, sortMode) {
   for (var j = 0; j < scored.length && j < limit; j++) out.push(scored[j].item)
   return out
 }
+
+// ---- Dead-key composition -------------------------------------------------
+// The query is a plain Text fed by Keys.onPressed, so neither Qt nor the input method composes dead keys
+// (us-intl, many European layouts): a dead key arrives as a key event with text "" and the next letter
+// arrives uncomposed. Without this, "~" + "a" typed nothing and "'" + "c" typed a bare "c".
+// Qt key codes (Qt::Key_Dead_*): grave 0x1001250, acute 0x1001251, circumflex 0x1001252, tilde 0x1001253,
+// diaeresis 0x1001257.
+var DEAD_KEYS = {
+  0x1001253: { ch: "~", map: { a: "ã", o: "õ", n: "ñ", A: "Ã", O: "Õ", N: "Ñ" } },
+  0x1001251: { ch: "'", map: { a: "á", e: "é", i: "í", o: "ó", u: "ú", c: "ç", y: "ý", A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú", C: "Ç", Y: "Ý" } },
+  0x1001250: { ch: "`", map: { a: "à", e: "è", i: "ì", o: "ò", u: "ù", A: "À", E: "È", I: "Ì", O: "Ò", U: "Ù" } },
+  0x1001252: { ch: "^", map: { a: "â", e: "ê", i: "î", o: "ô", u: "û", A: "Â", E: "Ê", I: "Î", O: "Ô", U: "Û" } },
+  0x1001257: { ch: "\"", map: { a: "ä", e: "ë", i: "ï", o: "ö", u: "ü", y: "ÿ", A: "Ä", E: "Ë", I: "Ï", O: "Ö", U: "Ü" } }
+}
+
+// pending: the armed dead key (0 = none); key/text: the Qt key event.
+// Returns { consumed, pending, insert }: when `consumed` the caller swallows the event, appends `insert`
+// (may be "") to the query and stores `pending`.
+function composeDeadKey(pending, key, text) {
+  if (DEAD_KEYS[key] !== undefined && text === "") return { consumed: true, pending: key, insert: "" }
+  // text "" is a bare modifier (Shift/Ctrl/...): keep the dead key armed.
+  if (!pending || text === "") return { consumed: false, pending: pending || 0, insert: "" }
+  var d = DEAD_KEYS[pending]
+  // Backspace/Enter/Esc/Tab and other control characters cancel the composition and are handled normally.
+  if (text.length !== 1 || text.charCodeAt(0) < 32) return { consumed: false, pending: 0, insert: "" }
+  var insert = d.map[text] !== undefined ? d.map[text] : (text === " " ? d.ch : d.ch + text)
+  return { consumed: true, pending: 0, insert: insert }
+}
